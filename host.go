@@ -238,4 +238,3 @@ func probeUpstream(probeURL, token string, headers http.Header) (pluginapi.HTTPR
 	}
 	return hostHTTPDo(http.MethodGet, probeURL, headers, nil)
 }
-}
