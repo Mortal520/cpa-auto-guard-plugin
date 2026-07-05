@@ -36,7 +36,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '>=1.26.0'
+          go-version-file: go.mod
           cache: false
 
       - name: Fetch CLIProxyAPI SDK source
@@ -72,12 +72,11 @@ jobs:
           Set-Content -Path go.mod -Value $content -NoNewline -Encoding UTF8
           Get-Content go.mod
 
-      - name: Tidy and download
+      - name: Download dependencies
         shell: bash
         run: |
           set -euo pipefail
-          go mod tidy 2>&1 | tee tidy.log || true
-          go mod download 2>&1 | tee download.log || true
+          go mod download 2>&1 | tee download.log
 
       - name: Build c-shared
         env:
@@ -86,7 +85,11 @@ jobs:
           CGO_ENABLED: '1'
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p bin
+          # Skip tidy to avoid rewriting the patched replace; build will
+          # resolve the replaced module from ./CLIProxyAPI-src and download
+          # transitive deps via the runner GOPROXY.
           go build -buildmode=c-shared -trimpath -o "bin/${{ matrix.artifact }}" . 2>&1 | tee build.log
           ls -la bin || true
 
@@ -96,8 +99,6 @@ jobs:
           echo "::group::go.mod"
           cat go.mod
           echo "::endgroup::"
-          echo "::group::tidy.log"
-          cat tidy.log 2>/dev/null || true
           echo "::endgroup::"
           echo "::group::download.log"
           cat download.log 2>/dev/null || true
@@ -123,7 +124,6 @@ jobs:
           name: logs-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             go.mod
-            tidy.log
             download.log
             build.log
           if-no-files-found: ignore
