@@ -408,4 +408,3 @@ setInterval(loadLogs, 3000);
 </script></body></html>`
 	return []byte(tpl)
 }
-}
