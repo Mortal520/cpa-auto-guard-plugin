@@ -20,14 +20,6 @@ jobs:
             goos: linux
             goarch: amd64
             artifact: cpa-auto-guard.so
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            artifact: cpa-auto-guard.dll
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-            artifact: cpa-auto-guard.dylib
 
     steps:
       - name: Checkout plugin
@@ -46,31 +38,13 @@ jobs:
           git clone --depth 1 https://github.com/router-for-me/CLIProxyAPI ./CLIProxyAPI-src
           echo "Replaced SDK path: $(pwd)/CLIProxyAPI-src"
 
-      - name: Patch go.mod replace to CI path (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Append replace to go.mod
         shell: bash
         run: |
-          # Replace any existing replace line for the CLIProxyAPI module to point
-          # to the freshly cloned SDK inside the runner workspace.
-          if grep -Eq '^replace\s+github.com/router-for-me/CLIProxyAPI/v7' go.mod; then
-            sed -i -E 's|^replace\s+github.com/router-for-me/CLIProxyAPI/v7\s+=>.*|replace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src|' go.mod
-          else
-            printf '\nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src\n' >> go.mod
-          fi
+          set -euo pipefail
+          # go.mod 仓库版本不带 replace (避免提交本地路径)。CI 在此追加一行指向刚 clone 的 SDK。
+          printf '\nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src\n' >> go.mod
           cat go.mod
-
-      - name: Patch go.mod replace to CI path (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $content = Get-Content go.mod -Raw
-          if ($content -match '(?m)^replace\s+github\.com/router-for-me/CLIProxyAPI/v7\s+=>.*$') {
-            $content = $content -replace '(?m)^replace\s+github\.com/router-for-me/CLIProxyAPI/v7\s+=>.*$', 'replace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src'
-          } else {
-            $content += "`nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src`n"
-          }
-          Set-Content -Path go.mod -Value $content -NoNewline -Encoding UTF8
-          Get-Content go.mod
 
       - name: Download dependencies
         shell: bash
@@ -98,7 +72,6 @@ jobs:
         run: |
           echo "::group::go.mod"
           cat go.mod
-          echo "::endgroup::"
           echo "::endgroup::"
           echo "::group::download.log"
           cat download.log 2>/dev/null || true
