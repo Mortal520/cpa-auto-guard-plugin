@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -129,7 +127,7 @@ func stateResponse(req managementRequest) ([]byte, error) {
 
 func accountsResponse(req managementRequest) ([]byte, error) {
 	// Merge live list with internal state so the panel always reflects reality.
-	files, err := hostAuthList()
+	files, _ := hostAuthList()
 	internal := guard().snapshot()
 	merged := make([]map[string]any, 0, len(files))
 	for _, f := range files {

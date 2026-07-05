@@ -226,3 +226,16 @@ func setAuthDisabled(authIndex string, disabled bool) (bool, error) {
 	}
 	return prev, nil
 }
+
+// probeUpstream issues a GET against the configured probe URL using the given
+// bearer token and optional account-id header.
+func probeUpstream(probeURL, token string, headers http.Header) (pluginapi.HTTPResponse, error) {
+	if headers == nil {
+		headers = http.Header{}
+	}
+	if token != "" && headers.Get("Authorization") == "" {
+		headers.Set("Authorization", "Bearer "+token)
+	}
+	return hostHTTPDo(http.MethodGet, probeURL, headers, nil)
+}
+}

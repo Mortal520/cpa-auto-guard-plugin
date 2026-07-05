@@ -179,7 +179,7 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 	case pluginabi.MethodUsageHandle:
 		return handleUsageEvent(request)
 	case pluginabi.MethodManagementRegister:
-		return okEnvelope(managementRegistration())
+		return okEnvelope(buildManagementRegistration())
 	case pluginabi.MethodManagementHandle:
 		return handleManagement(request)
 	default:
@@ -237,7 +237,7 @@ type managementResource struct {
 	Description string `json:"Description"`
 }
 
-func managementRegistration() managementRegistration {
+func buildManagementRegistration() managementRegistration {
 	return managementRegistration{
 		Resources: []managementResource{{
 			Path:        "/",
