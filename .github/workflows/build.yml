@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }}
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,6 +20,10 @@ jobs:
             goos: linux
             goarch: amd64
             artifact: cpa-auto-guard.so
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: cpa-auto-guard.dll
 
     steps:
       - name: Checkout plugin
@@ -42,7 +46,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # go.mod 仓库版本不带 replace (避免提交本地路径)。CI 在此追加一行指向刚 clone 的 SDK。
           printf '\nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src\n' >> go.mod
           cat go.mod
 
@@ -61,9 +64,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p bin
-          # Skip tidy to avoid rewriting the patched replace; build will
-          # resolve the replaced module from ./CLIProxyAPI-src and download
-          # transitive deps via the runner GOPROXY.
           go build -buildmode=c-shared -trimpath -o "bin/${{ matrix.artifact }}" . 2>&1 | tee build.log
           ls -la bin || true
 
