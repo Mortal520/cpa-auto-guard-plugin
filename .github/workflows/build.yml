@@ -1,0 +1,130 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: cpa-auto-guard.so
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: cpa-auto-guard.dll
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            artifact: cpa-auto-guard.dylib
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.26.0'
+          cache: false
+
+      - name: Fetch CLIProxyAPI SDK source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/router-for-me/CLIProxyAPI ./CLIProxyAPI-src
+          echo "Replaced SDK path: $(pwd)/CLIProxyAPI-src"
+
+      - name: Patch go.mod replace to CI path (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          # Replace any existing replace line for the CLIProxyAPI module to point
+          # to the freshly cloned SDK inside the runner workspace.
+          if grep -Eq '^replace\s+github.com/router-for-me/CLIProxyAPI/v7' go.mod; then
+            sed -i -E 's|^replace\s+github.com/router-for-me/CLIProxyAPI/v7\s+=>.*|replace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src|' go.mod
+          else
+            printf '\nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src\n' >> go.mod
+          fi
+          cat go.mod
+
+      - name: Patch go.mod replace to CI path (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $content = Get-Content go.mod -Raw
+          if ($content -match '(?m)^replace\s+github\.com/router-for-me/CLIProxyAPI/v7\s+=>.*$') {
+            $content = $content -replace '(?m)^replace\s+github\.com/router-for-me/CLIProxyAPI/v7\s+=>.*$', 'replace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src'
+          } else {
+            $content += "`nreplace github.com/router-for-me/CLIProxyAPI/v7 => ./CLIProxyAPI-src`n"
+          }
+          Set-Content -Path go.mod -Value $content -NoNewline -Encoding UTF8
+          Get-Content go.mod
+
+      - name: Tidy and download
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod tidy 2>&1 | tee tidy.log || true
+          go mod download 2>&1 | tee download.log || true
+
+      - name: Build c-shared
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+        shell: bash
+        run: |
+          mkdir -p bin
+          go build -buildmode=c-shared -trimpath -o "bin/${{ matrix.artifact }}" . 2>&1 | tee build.log
+          ls -la bin || true
+
+      - name: Collect build logs on failure
+        if: failure()
+        run: |
+          echo "::group::go.mod"
+          cat go.mod
+          echo "::endgroup::"
+          echo "::group::tidy.log"
+          cat tidy.log 2>/dev/null || true
+          echo "::endgroup::"
+          echo "::group::download.log"
+          cat download.log 2>/dev/null || true
+          echo "::endgroup::"
+          echo "::group::build.log"
+          cat build.log 2>/dev/null || true
+          echo "::endgroup::"
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: bin/${{ matrix.artifact }}
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: '0'
+
+      - name: Upload logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            go.mod
+            tidy.log
+            download.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 7
