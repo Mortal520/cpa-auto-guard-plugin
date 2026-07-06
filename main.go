@@ -245,12 +245,7 @@ func buildManagementRegistration() managementRegistration {
 				Menu:        "Auto Guard",
 				Description: "Codex 账号自动管理：限额禁用、到期恢复、连续失败删除。",
 			},
-			{
-				Path:        "/logs.html",
-				Menu:        "Auto Guard 日志",
-				Description: "实时日志窗口与历史日志查看。",
 			},
-		},
 		Routes: []managementRoute{
 			{Method: "GET", Path: "/cpa-auto-guard/state", Description: "完整状态 JSON"},
 			{Method: "GET", Path: "/cpa-auto-guard/accounts", Description: "账号视图"},

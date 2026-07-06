@@ -272,32 +272,36 @@ func jsonResponse(v any) ([]byte, error) {
 // renderConsole renders the single-page HTML control panel. The page is
 // self-contained: it fetches the Management API (served under the same
 // /v0/management/cpa-auto-guard/ prefix) and updates the UI in place.
+
+// renderConsole renders the single-page HTML control panel. The page is
+// self-contained: it fetches the Management API (served under the same
+// /v0/management/cpa-auto-guard/ prefix) and updates the UI in place.
+// Light theme so version/status badges stay readable on a white background.
 func renderConsole(req managementRequest) []byte {
 	const tpl = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cpa-auto-guard 控制台</title>
 <style>
-:root{--bg:#0f172a;--panel:#111827;--text:#e5e7eb;--muted:#94a3b8;--accent:#38bdf8;--warn:#fbbf24;--err:#f87171;--ok:#34d399;--border:#1f2937}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#0b1224 0%,#0f172a 60%,#111827 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:1.25rem}
-h1{font-size:1.25rem;margin:0 0 .5rem;display:flex;align-items:center;gap:.5rem}.badge{font-size:.7rem;padding:.15rem .5rem;border-radius:9999px;background:#1e293b;color:var(--muted);border:1px solid var(--border)}
+:root{--bg:#f8fafc;--card:#ffffff;--text:#0f172a;--muted:#64748b;--accent:#0284c7;--warn:#b45309;--err:#b91c1c;--ok:#047857;--border:#e2e8f0}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#eff6ff 0%,#f8fafc 60%,#f1f5f9 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;padding:1.25rem}
+h1{font-size:1.25rem;margin:0 0 .5rem;display:flex;align-items:center;gap:.5rem}.badge{font-size:.72rem;padding:.18rem .55rem;border-radius:9999px;background:#e0f2fe;color:var(--accent);border:1px solid #bae6fd;font-weight:600}.badge.muted{background:#f1f5f9;color:var(--muted);border-color:var(--border)}
 .grid{display:grid;gap:1rem;grid-template-columns:1fr;max-width:1100px;margin:0 auto}
-.card{background:rgba(17,24,39,.7);border:1px solid var(--border);border-radius:12px;padding:1rem;backdrop-filter:blur(4px)}
-.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}.muted{color:var(--muted)}.small{font-size:.78rem}
-button{background:#1e293b;color:var(--text);border:1px solid var(--border);padding:.45rem .8rem;border-radius:8px;cursor:pointer;font-size:.85rem;transition:all .15s}button:hover{border-color:var(--accent);color:var(--accent)}button.warn:hover{border-color:var(--warn);color:var(--warn)}button.err:hover{border-color:var(--err);color:var(--err)}button:disabled{opacity:.5;cursor:not-allowed}
-.toggle{display:inline-flex;align-items:center;gap:.4rem}.switch{width:44px;height:24px;background:#1e293b;border-radius:9999px;position:relative;transition:background .2s}.switch.on{background:var(--ok)}.switch::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#e5e7eb;top:3px;left:3px;transition:left .2s}.switch.on::after{left:23px}
-table{width:100%;border-collapse:collapse;font-size:.78rem}th,td{padding:.4rem .5rem;text-align:left;border-bottom:1px solid var(--border)}th{color:var(--muted);font-weight:600}.tag{padding:.1rem .4rem;border-radius:6px;font-size:.7rem;background:#1e293b}.tag.q{color:var(--warn)}.tag.f{color:var(--err)}.tag.a{color:var(--ok)}.tag.s{color:var(--muted)}
-#log{max-height:300px;overflow-y:auto;background:#0b1224;border:1px solid var(--border);border-radius:8px;padding:.5rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.75rem;line-height:1.5}.line{display:flex;gap:.5rem;padding:.15rem 0;border-bottom:1px dashed #1e293b}.t{color:var(--muted);min-width:90px}.lvl{min-width:50px;font-weight:600}.lvl.info{color:var(--accent)}.lvl.warn{color:var(--warn)}.lvl.error{color:var(--err)}.acc{color:var(--muted);min-width:140px}.msg{flex:1;word-break:break-word}
-.stat{display:flex;flex-direction:column;gap:.2rem}.stat .n{font-size:1.5rem;font-weight:700}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center}.muted{color:var(--muted)}.small{font-size:.8rem}
+button{background:#f1f5f9;color:var(--text);border:1px solid var(--border);padding:.45rem .85rem;border-radius:8px;cursor:pointer;font-size:.85rem;transition:all .15s}button:hover{border-color:var(--accent);color:var(--accent);background:#e0f2fe}button.warn:hover{border-color:var(--warn);color:var(--warn);background:#fef3c7}button.err:hover{border-color:var(--err);color:var(--err);background:#fee2e2}button:disabled{opacity:.5;cursor:not-allowed}
+.toggle{display:inline-flex;align-items:center;gap:.4rem}.switch{width:46px;height:26px;background:#cbd5e1;border-radius:9999px;position:relative;transition:background .2s;cursor:pointer;user-select:none}.switch.on{background:var(--ok)}.switch::after{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:#ffffff;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(15,23,42,.25)}.switch.on::after{left:23px}
+table{width:100%;border-collapse:collapse;font-size:.8rem}th,td{padding:.45rem .55rem;text-align:left;border-bottom:1px solid var(--border);color:var(--text)}th{color:var(--muted);font-weight:600}.tag{padding:.12rem .45rem;border-radius:6px;font-size:.72rem;background:#f1f5f9;color:var(--text)}.tag.q{color:var(--warn);background:#fef3c7}.tag.f{color:var(--err);background:#fee2e2}.tag.a{color:var(--ok);background:#d1fae5}.tag.s{color:var(--muted);background:#f1f5f9}
+.log-card{background:var(--card)}.log-wrap{max-height:320px;overflow-y:auto;background:#0f172a;border:1px solid var(--border);border-radius:8px;padding:.6rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.6;color:#e2e8f0}.line{display:flex;gap:.5rem;padding:.18rem 0;border-bottom:1px dashed #1e293b}.line:last-child{border-bottom:none}.t{color:#94a3b8;min-width:92px}.lvl{min-width:52px;font-weight:600}.lvl.info{color:#38bdf8}.lvl.warn{color:#fbbf24}.lvl.error{color:#f87171}.acc{color:#94a3b8;min-width:148px}.msg{flex:1;word-break:break-word;color:#e2e8f0}
+a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-direction:column;gap:.2rem}.stat .n{font-size:1.6rem;font-weight:700;color:var(--text)}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem}
 </style></head><body><div class="grid">
-<div class="card"><div class="row" style="justify-content:space-between"><h1><span>🛡️ cpa-auto-guard</span><span id="verBadge" class="badge">v` + pluginVer + `</span><span id="enBadge" class="badge">加载中</span></h1>
-<div class="row"><label class="toggle"><div id="switch" class="switch" onclick="togglePlugin()"></div><span id="switchLabel" class="small muted">关闭</span></label>
-<button onclick="runTick()">⚡ 立即执行</button>
-<button class="warn" onclick="clearLogs()">清空日志</button>
-<a class="badge" href="/v0/management/" target="_blank" rel="noopener" style="text-decoration:none">CPA 面板</a>
-<a class="badge" href="./logs.html" style="text-decoration:none">日志页</a></div></div></div>
+<div class="card"><div class="row" style="justify-content:space-between"><h1><span>🛡️ cpa-auto-guard</span><span id="verBadge" class="badge">v` + pluginVer + `</span><span id="enBadge" class="badge muted">加载中</span></h1>
+<div class="row"><label class="toggle"><div id="switch" class="switch" role="switch" tabindex="0" aria-label="插件开关"></div><span id="switchLabel" class="small muted">关闭</span></label>
+<button id="btnRun">⚡ 立即执行</button>
+<button class="warn" id="btnClear">清空日志</button>
+</div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">账号</h3><span class="small muted" id="accCount"></span></div><div style="overflow-x:auto"><table id="accTable"><thead><tr><th>状态</th><th>账号</th><th>file</th><th>CPA disabled</th><th>guard</th><th>重置剩余</th><th>retry</th><th>操作</th></tr></thead><tbody id="accBody"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody></table></div></div>
-<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">日志</h3><span class="small muted" id="logCount"></span></div><div id="log"><div class="muted">加载中…</div></div></div>
+<div class="card log-card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">日志</h3><span class="small muted" id="logCount"></span></div><div class="log-wrap" id="log"><div class="muted" style="color:#94a3b8">加载中…</div></div></div>
 <div class="card small muted">cpa-auto-guard 在 CPA 进程内自驱动管理 Codex 账号：限额禁用、到期探测恢复、request_failed 连续失败删除。日志仅在内存中保留最近 500 条。</div>
 </div>
 <script>
@@ -319,7 +323,9 @@ async function loadState() {
   const sw = document.getElementById("switch");
   sw.classList.toggle("on", !!d.enabled);
   document.getElementById("switchLabel").textContent = d.enabled ? "开启" : "关闭";
-  document.getElementById("enBadge").textContent = d.enabled ? "运行中" : "已停用";
+  const enb = document.getElementById("enBadge");
+  enb.textContent = d.enabled ? "运行中" : "已停用";
+  enb.classList.toggle("muted", !d.enabled);
   const sum = d.summary || {};
   const stats = document.getElementById("stats");
   stats.innerHTML = [
@@ -413,6 +419,12 @@ async function del(idx) {
   setTimeout(loadState, 400);
 }
 async function clearLogs() { await api("logs/clear", {method: "POST"}); loadLogs(); }
+document.getElementById("switch").addEventListener("click", togglePlugin);
+document.getElementById("switch").addEventListener("keydown", function (e) {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); togglePlugin(); }
+});
+document.getElementById("btnRun").addEventListener("click", runTick);
+document.getElementById("btnClear").addEventListener("click", clearLogs);
 loadState(); loadLogs();
 setInterval(loadState, 5000);
 setInterval(loadLogs, 3000);
