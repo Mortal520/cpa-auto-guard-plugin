@@ -583,11 +583,11 @@ func (g *guardState) probeAccount(authIndex, account string) (probeResult, error
 	}
 	resp, err := probeUpstream(cfg.ProbeURL, token, headers)
 	if err != nil {
+		hostLog("warn", fmt.Sprintf("cpa-auto-guard probeUpstream err=%v url=%s account=%s token_len=%d accID_len=%d mgmtOK=%v", err, cfg.ProbeURL, account, len(token), len(accID), mgmtOK))
 		return probeResult{kind: probeFailed}, nil
 	}
 	return classifyProbe(resp.StatusCode, resp.Body), nil
 }
-
 // classifyProbe inspects a usage endpoint response and returns the result.
 func classifyProbe(statusCode int, body []byte) probeResult {
 	bodyLower := strings.ToLower(string(body))
