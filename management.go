@@ -93,6 +93,8 @@ func dispatchAPI(req managementRequest, action string) ([]byte, error) {
 		return recoverResponse(req)
 	case "delete":
 		return deleteResponse(req)
+	case "config":
+		return configResponse(req)
 	default:
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusNotFound,
