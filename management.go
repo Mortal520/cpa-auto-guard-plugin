@@ -284,6 +284,7 @@ func configResponse(req managementRequest) ([]byte, error) {
 		var parsed struct {
 			ManagementURL *string `json:"management_url,omitempty"`
 			ManagementKey *string `json:"management_key,omitempty"`
+			ProxyURL      *string `json:"proxy_url,omitempty"`
 		}
 		if len(req.Body) > 0 {
 			_ = json.Unmarshal(req.Body, &parsed)
@@ -298,6 +299,12 @@ func configResponse(req managementRequest) ([]byte, error) {
 			if mk != "" {
 				cfg.ManagementKey = mk
 			}
+		}
+		if parsed.ProxyURL != nil {
+			pu := strings.TrimSpace(*parsed.ProxyURL)
+			// Empty string clears the proxy; otherwise replace. URL may carry
+			// embedded credentials and is never echoed on GET.
+			cfg.ProxyURL = pu
 		}
 		g.applyConfig(cfg)
 		g.pushLog("info", "", "", "管理 API 配置已更新")
@@ -380,7 +387,9 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">管理 API 配置</h3><span class="small muted" id="cfgStatus"></span></div><div class="row" style="margin-top:.5rem;align-items:flex-end">
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">CPA 管理 API 基址<input id="cfgURL" type="text" placeholder="http://127.0.0.1:8317" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">X-Management-Key<input id="cfgKey" type="password" placeholder="留空表示未配置" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
+<label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">代理 URL（socks5/http，含凭据）<input id="cfgProxy" type="text" placeholder="socks5://user:pass@host:port" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <button id="btnSaveCfg">保存配置</button></div>
+<div class="small muted" style="margin-top:.25rem"><span id="cfgProxyStatus">代理状态未知</span></div>
 <div class="small muted" style="margin-top:.5rem">配置后插件可直接通过管理 API 拿取账号凭据进行主动探查，绕过失效的 host 回调。Key 仅存内存，不回显、不写日志。</div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">账号</h3><span class="small muted" id="accCount"></span></div><div style="overflow-x:auto"><table id="accTable"><thead><tr><th>状态</th><th>账号</th><th>file</th><th>CPA disabled</th><th>guard</th><th>重置剩余</th><th>retry</th><th>操作</th></tr></thead><tbody id="accBody"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody></table></div></div>
 <div class="card log-card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">日志</h3><span class="small muted" id="logCount"></span></div><div class="log-wrap" id="log"><div class="muted" style="color:#94a3b8">加载中…</div></div></div>
@@ -512,6 +521,10 @@ async function loadCfg() {
   document.getElementById("cfgURL").value = d.management_url || "";
   const st = document.getElementById("cfgStatus");
   if (st) st.textContent = d.management_key_set ? "Key 已配置 ✓" : "未配置 Key";
+  const pst = document.getElementById("cfgProxyStatus");
+  if (pst) pst.textContent = d.proxy_url_configured ? "代理已配置 ✓" : "未配置代理";
+  // cfgProxy field stays empty on load: sending empty preserves current value,
+  // so the user typing nothing means "keep as-is".
 }
 async function saveCfg() {
   const url = document.getElementById("cfgURL").value.trim();
@@ -520,6 +533,13 @@ async function saveCfg() {
   const body = {management_url: url};
   // Only send key when user typed something (empty = keep current).
   if (key && key.trim() !== "") body.management_key = key.trim();
+  // Only send proxy_url when the user typed something non-empty; an empty
+  // field means "keep current proxy". Send literal "" only when the user
+  // wants to clear it, which we signal by them typing a single space and
+  // trimming to "" — but the simplest safe rule: proxy field non-empty =
+  // replace; leave it blank on load and it won't be sent.
+  const proxy = document.getElementById("cfgProxy").value.trim();
+  if (proxy !== "") body.proxy_url = proxy;
   const r = await api("settings", {method: "POST", body: body});
   if (r && r.ok) { document.getElementById("cfgKey").value = ""; loadCfg(); alert("配置已保存"); }
   else { alert("保存失败: " + (r && r.error ? r.error.message : "")); }
