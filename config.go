@@ -27,7 +27,7 @@ func configDefaults() guardConfig {
 		SweepSeconds:             300,
 		ManagementURL:             "http://127.0.0.1:8317",
 		ProxyURL:                  "",
-	},
+	}
 }
 
 // configFields declares plugin-owned configuration fields for the management UI.
