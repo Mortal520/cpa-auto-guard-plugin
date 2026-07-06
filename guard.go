@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
 // accountState describes the plugin's view of one auth account.
@@ -585,14 +587,40 @@ func (g *guardState) probeAccount(authIndex, account string) (probeResult, error
 	if accID != "" {
 		headers.Set("Chatgpt-Account-Id", accID)
 	}
-	resp, err := probeUpstream(cfg, cfg.ProbeURL, token, headers)
-	if err != nil {
-		msg := fmt.Sprintf("cpa-auto-guard probeUpstream err=%v url=%s account=%s token_len=%d accID_len=%d mgmtOK=%v", err, cfg.ProbeURL, account, len(token), len(accID), mgmtOK)
+	// socks5/http proxies can transiently fail with TLS handshake timeout or
+	// "general SOCKS server failure"; retry up to 2 times with short backoff
+	// before declaring the probe failed.
+	var resp pluginapi.HTTPResponse
+	var probeErr error
+	const maxAttempts = 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		resp, probeErr = probeUpstream(cfg, cfg.ProbeURL, token, headers)
+		if probeErr == nil {
+			break
+		}
+		if attempt < maxAttempts {
+			g.pushLog("warn", authIndex, account, fmt.Sprintf("probe 重试 %d/%d: %v", attempt, maxAttempts, probeErr))
+			time.Sleep(time.Duration(400*attempt) * time.Millisecond)
+		}
+	}
+	if probeErr != nil {
+		msg := fmt.Sprintf("cpa-auto-guard probeUpstream err=%v url=%s account=%s token_len=%d accID_len=%d mgmtOK=%v", probeErr, cfg.ProbeURL, account, len(token), len(accID), mgmtOK)
 		hostLog("warn", msg)
 		g.pushLog("warn", authIndex, account, msg)
 		return probeResult{kind: probeFailed}, nil
 	}
-	return classifyProbe(resp.StatusCode, resp.Body), nil
+	result := classifyProbe(resp.StatusCode, resp.Body)
+	// Surface non-OK classify outcomes with the actual status + body excerpt
+	// so issues like 401 token_invalidated are visible in logs, not only the
+	// bare "probeFailed" kind the state machine sees.
+	if result.kind == probeFailed && result.statusCode != 0 {
+		bodyExcerpt := strings.TrimSpace(string(resp.Body))
+		if len(bodyExcerpt) > 200 {
+			bodyExcerpt = bodyExcerpt[:200] + "..."
+		}
+		g.pushLog("warn", authIndex, account, fmt.Sprintf("probe 响应非正常: status=%d body=%s", result.statusCode, bodyExcerpt))
+	}
+	return result, nil
 }
 // classifyProbe inspects a usage endpoint response and returns the result.
 func classifyProbe(statusCode int, body []byte) probeResult {
