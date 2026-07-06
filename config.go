@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -84,6 +85,12 @@ func extractYAMLBytes(raw map[string]any) ([]byte, bool) {
 	}
 	switch t := v.(type) {
 	case string:
+		// The host serialises ConfigYAML ([]byte) as a base64 string in JSON.
+		// When unmarshalled into map[string]any it stays a string, so try to
+		// base64-decode first; if that fails, treat it as raw YAML text.
+		if decoded, err := base64.StdEncoding.DecodeString(t); err == nil {
+			return decoded, true
+		}
 		return []byte(t), true
 	case []byte:
 		return t, true

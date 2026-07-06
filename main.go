@@ -60,7 +60,6 @@ import "C"
 
 import (
 	"encoding/json"
-	"strings"
 	"unsafe"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
@@ -204,13 +203,6 @@ type registrationCapabilities struct {
 func pluginRegistration(request []byte) registration {
 	cfg := parseConfigFromReconfigure(request)
 	guard().applyConfig(cfg)
-	debugLogo := pluginLogo
-	reqSnippet := string(request)
-	if len(reqSnippet) > 400 {
-		reqSnippet = reqSnippet[:400]
-	}
-	reqSnippet = strings.ReplaceAll(reqSnippet, " ", "_")
-	debugLogo = "DBG[" + reqSnippet + "]"
 	return registration{
 		SchemaVersion: pluginabi.SchemaVersion,
 		Metadata: pluginapi.Metadata{
@@ -218,7 +210,7 @@ func pluginRegistration(request []byte) registration {
 			Version:          pluginVer,
 			Author:           pluginAuth,
 			GitHubRepository: pluginRepo,
-			Logo:             debugLogo,
+			Logo:             pluginLogo,
 			ConfigFields:     configFields(),
 		},
 		Capabilities: registrationCapabilities{
