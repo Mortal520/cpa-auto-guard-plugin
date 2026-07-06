@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"gopkg.in/yaml.v3"
 
@@ -52,21 +51,21 @@ func configFields() []pluginapi.ConfigField {
 func parseConfigFromReconfigure(request []byte) guardConfig {
 	cfg := configDefaults()
 	if len(request) == 0 {
-		hostLog("warn", "cpa-auto-guard: reconfigure received empty payload")
+	
 		return cfg
 	}
-	hostLog("warn", "cpa-auto-guard: reconfigure raw payload="+string(request))
+
 	// Host sends {"config_yaml": <YAML bytes>, "schema_version": N}.
 	var raw map[string]any
 	if err := json.Unmarshal(request, &raw); err != nil {
-		hostLog("error", "cpa-auto-guard: reconfigure json decode failed: "+err.Error())
+
 		return cfg
 	}
 	// Case 1: native c-shared bridge delivers config_yaml as a YAML string.
 	if yamlBytes, ok := extractYAMLBytes(raw); ok {
-		hostLog("warn", "cpa-auto-guard: config_yaml bytes="+string(yamlBytes))
+
 		applyYAMLConfig(&cfg, yamlBytes)
-		hostLog("warn", fmt.Sprintf("cpa-auto-guard: parsed cfg.Enabled=%v", cfg.Enabled))
+
 		return cfg
 	}
 	// Case 2: host sends {"config": {...}} or the config object directly as JSON.

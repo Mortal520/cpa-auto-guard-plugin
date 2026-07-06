@@ -318,6 +318,7 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 <div class="row"><label class="toggle"><div id="switch" class="switch" role="switch" tabindex="0" aria-label="插件开关"></div><span id="switchLabel" class="small muted">关闭</span></label>
 <button id="btnRun">⚡ 立即执行</button>
 <button class="warn" id="btnClear">清空日志</button>
+<a class="badge" href="/v0/management/plugins" target="_blank" rel="noopener">插件总览</a>
 </div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">账号</h3><span class="small muted" id="accCount"></span></div><div style="overflow-x:auto"><table id="accTable"><thead><tr><th>状态</th><th>账号</th><th>file</th><th>CPA disabled</th><th>guard</th><th>重置剩余</th><th>retry</th><th>操作</th></tr></thead><tbody id="accBody"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody></table></div></div>
