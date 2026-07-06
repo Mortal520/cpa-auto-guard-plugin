@@ -583,7 +583,9 @@ func (g *guardState) probeAccount(authIndex, account string) (probeResult, error
 	}
 	resp, err := probeUpstream(cfg.ProbeURL, token, headers)
 	if err != nil {
-		hostLog("warn", fmt.Sprintf("cpa-auto-guard probeUpstream err=%v url=%s account=%s token_len=%d accID_len=%d mgmtOK=%v", err, cfg.ProbeURL, account, len(token), len(accID), mgmtOK))
+		msg := fmt.Sprintf("cpa-auto-guard probeUpstream err=%v url=%s account=%s token_len=%d accID_len=%d mgmtOK=%v", err, cfg.ProbeURL, account, len(token), len(accID), mgmtOK)
+		hostLog("warn", msg)
+		g.pushLog("warn", authIndex, account, msg)
 		return probeResult{kind: probeFailed}, nil
 	}
 	return classifyProbe(resp.StatusCode, resp.Body), nil
