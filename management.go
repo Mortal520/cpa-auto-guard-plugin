@@ -334,7 +334,7 @@ func deleteResponse(req managementRequest) ([]byte, error) {
 	if v := guard().snapshot()[authIndex]; v != nil {
 		account = v.Account
 	}
-	if err := guard().deleteAccount(authIndex, account); err != nil {
+	if err := guard().deleteAccount(guard().configSnapshot(), authIndex, account); err != nil {
 		return jsonResponse(map[string]any{"ok": false, "error": err.Error()})
 	}
 	return jsonResponse(map[string]any{"ok": true})
