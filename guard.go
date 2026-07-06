@@ -364,7 +364,7 @@ func (g *guardState) onQuotaReached(authIndex string, rec usageEvent) {
 		})
 		return
 	}
-	if _, err := setAuthDisabled(authIndex, true); err != nil {
+	if _, err := setAuthDisabled(cfg, authIndex, true); err != nil {
 		g.pushLog("error", authIndex, rec.Account, fmt.Sprintf("限额禁用失败: %v", err))
 		return
 	}
@@ -441,7 +441,7 @@ func (g *guardState) onRequestFailed(authIndex string, rec usageEvent) {
 	case probeFailed:
 		if rec2.RetryCount >= cfg.DeleteThreshold {
 			g.pushLog("error", authIndex, rec.Account, fmt.Sprintf("连续失败 %d 次且探测仍失败，删除账号", rec2.RetryCount))
-			if err := g.deleteAccount(authIndex, rec.Account); err != nil {
+			if err := g.deleteAccount(cfg, authIndex, rec.Account); err != nil {
 				g.pushLog("error", authIndex, rec.Account, fmt.Sprintf("删除账号失败: %v", err))
 			}
 		}
@@ -498,7 +498,7 @@ func (g *guardState) recoverProbe(a *accountState, cfg guardConfig) {
 	}
 	switch outcome.kind {
 	case probeOK:
-		if _, err := setAuthDisabled(a.AuthIndex, false); err != nil {
+		if _, err := setAuthDisabled(cfg, a.AuthIndex, false); err != nil {
 			g.pushLog("error", a.AuthIndex, a.Account, fmt.Sprintf("恢复启用失败: %v", err))
 			return
 		}
@@ -681,7 +681,19 @@ func extractTokenAndAccountID(rawJSON json.RawMessage) (string, string) {
 // dedicated delete RPC for plugins, so we mark the file as disabled and log;
 // the panel or the user must clean up the file. If the backend supports a
 // "removed via management api" status message we adopt that convention.
-func (g *guardState) deleteAccount(authIndex, account string) error {
+func (g *guardState) deleteAccount(cfg guardConfig, authIndex, account string) error {
+	// Prefer the CPA management API delete path. The host.auth.get/save
+	// callbacks are unreliable on c-shared builds, so only fall back when
+	// management_key is not configured.
+	if cfg.ManagementKey != "" {
+		if err := mgmtDeleteAuthFile(cfg, authIndex); err != nil {
+			hostLog("warn", fmt.Sprintf("deleteAccount mgmt path failed: %v", err))
+			return err
+		}
+		g.markDeleted(authIndex, account)
+		return nil
+	}
+	// Legacy host callback path (only when management_key is empty).
 	get, err := hostAuthGet(authIndex)
 	if err != nil {
 		return err
@@ -700,13 +712,19 @@ func (g *guardState) deleteAccount(authIndex, account string) error {
 	if _, err := hostAuthSave(get.Name, newJSON); err != nil {
 		return err
 	}
+	g.markDeleted(authIndex, account)
+	return nil
+}
+
+// markDeleted records the account as deleted in the internal state and emits
+// the standard log entries.
+func (g *guardState) markDeleted(authIndex, account string) {
 	g.updateAccount(authIndex, func(a *accountState) {
 		a.State = stateDeleted
 		a.Reason = "request_failed_delete"
 	})
-	g.pushLog("error", authIndex, account, "账号已标记删除 (disabled + status_message)")
+	g.pushLog("error", authIndex, account, "账号已删除 (management API)")
 	hostLog("error", fmt.Sprintf("cpa-auto-guard: 删除账号 %s (%s)", describeAccount(authIndex, account), authIndex))
-	return nil
 }
 
 // shutdown is invoked when the plugin is unloaded.

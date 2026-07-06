@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"bytes"
 	"net/http"
 	"strings"
 	"time"
@@ -152,4 +153,122 @@ func mgmtResolveTokenAndAccount(cfg guardConfig, authIndex string) (token, accou
 		id = accIDFromList
 	}
 	return t, id, true
+}
+
+func mgmtResolveName(cfg guardConfig, authIndex string) string {
+	if authIndex == "" {
+		return ""
+	}
+	files, err := mgmtAuthList(cfg)
+	if err != nil || len(files) == 0 {
+		return ""
+	}
+	for _, f := range files {
+		if f.AuthIndex == authIndex {
+			return f.Name
+		}
+	}
+	return ""
+}
+
+// mgmtSetDisabled toggles an auth file disabled state via the CPA management
+// API (PATCH /v0/management/auth-files/status). Returns the *previous*
+// disabled state observed in the listing so callers can skip no-op writes.
+// Replaces the broken host.auth.get/host.auth.save path on c-shared builds.
+func mgmtSetDisabled(cfg guardConfig, authIndex string, disabled bool) (bool, error) {
+	if cfg.ManagementKey == "" {
+		return false, fmt.Errorf("management_key not configured")
+	}
+	prev := false
+	if files, err := mgmtAuthList(cfg); err == nil {
+		for _, f := range files {
+			if f.AuthIndex == authIndex {
+				prev = f.Disabled
+				break
+			}
+		}
+	}
+	if prev == disabled {
+		return prev, nil
+	}
+	name := mgmtResolveName(cfg, authIndex)
+	if name == "" {
+		return prev, fmt.Errorf("auth file not found for index %s", authIndex)
+	}
+	body, _ := json.Marshal(map[string]any{"name": name, "disabled": disabled})
+	base := strings.TrimRight(strings.TrimSpace(cfg.ManagementURL), "/")
+	if base == "" {
+		base = "http://127.0.0.1:8317"
+	}
+	target := base + "/v0/management/auth-files/status"
+	respBody, err := mgmtHTTPPatch(target, body, cfg.ManagementKey)
+	if err != nil {
+		return prev, fmt.Errorf("mgmt set disabled: %w", err)
+	}
+	_ = respBody
+	return prev, nil
+}
+
+// mgmtDeleteAuthFile removes an auth file via the CPA management API
+// (DELETE /v0/management/auth-files?name=<name>). Replaces the broken
+// host.auth.save tombstone path on c-shared builds.
+func mgmtDeleteAuthFile(cfg guardConfig, authIndex string) error {
+	if cfg.ManagementKey == "" {
+		return fmt.Errorf("management_key not configured")
+	}
+	name := mgmtResolveName(cfg, authIndex)
+	if name == "" {
+		return fmt.Errorf("auth file not found for index %s", authIndex)
+	}
+	base := strings.TrimRight(strings.TrimSpace(cfg.ManagementURL), "/")
+	if base == "" {
+		base = "http://127.0.0.1:8317"
+	}
+	target := base + "/v0/management/auth-files?name=" + urlEncode(name)
+	return mgmtHTTPDelete(target, cfg.ManagementKey)
+}
+
+// mgmtHTTPPatch performs a direct HTTP PATCH to the management API. Bypasses
+// the host proxy so localhost resolves inside the container.
+func mgmtHTTPPatch(target string, body []byte, managementKey string) ([]byte, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodPatch, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build mgmt patch %s: %w", target, err)
+	}
+	req.Header.Set("X-Management-Key", managementKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, errDo := client.Do(req)
+	if errDo != nil {
+		return nil, fmt.Errorf("mgmt patch %s: %w", target, errDo)
+	}
+	defer resp.Body.Close()
+	respBody, errRead := io.ReadAll(resp.Body)
+	if errRead != nil {
+		return nil, fmt.Errorf("read mgmt patch response %s: %w", target, errRead)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return respBody, fmt.Errorf("mgmt patch %s status %d: %s", target, resp.StatusCode, truncateForLog(string(respBody), 160))
+	}
+	return respBody, nil
+}
+
+// mgmtHTTPDelete performs a direct HTTP DELETE to the management API.
+func mgmtHTTPDelete(target, managementKey string) error {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodDelete, target, nil)
+	if err != nil {
+		return fmt.Errorf("build mgmt delete %s: %w", target, err)
+	}
+	req.Header.Set("X-Management-Key", managementKey)
+	resp, errDo := client.Do(req)
+	if errDo != nil {
+		return fmt.Errorf("mgmt delete %s: %w", target, errDo)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("mgmt delete %s status %d: %s", target, resp.StatusCode, truncateForLog(string(respBody), 160))
+	}
+	return nil
 }

@@ -202,7 +202,25 @@ func hostHTTPDo(method, target string, headers http.Header, body []byte) (plugin
 // setAuthDisabled fetches the auth JSON, toggles the disabled field, and saves.
 // When disabled=false the account is re-enabled. Returns the *previous* disabled
 // state observed in the stored JSON (so callers can skip no-op writes).
-func setAuthDisabled(authIndex string, disabled bool) (bool, error) {
+// setAuthDisabled toggles an auth file disabled state. It prefers the CPA
+// management API path (PATCH /v0/management/auth-files/status) because the
+// host.auth.get/host.auth.save callbacks are unreliable on c-shared plugin
+// builds. When management_key is not configured it falls back to the legacy
+// host callback path. Returns the previous disabled state so callers can
+// skip no-op writes.
+func setAuthDisabled(cfg guardConfig, authIndex string, disabled bool) (bool, error) {
+	if cfg.ManagementKey != "" {
+		prev, err := mgmtSetDisabled(cfg, authIndex, disabled)
+		if err == nil {
+			return prev, nil
+		}
+		// mgmt path returned an explicit error; only fall back to host
+		// callbacks when management is not configured at all, otherwise
+		// surface the mgmt error so the caller can log it accurately.
+		hostLog("warn", fmt.Sprintf("setAuthDisabled mgmt path failed, no fallback (host callbacks unreliable on c-shared): %v", err))
+		return prev, err
+	}
+	// Legacy host callback path (only when management_key is empty).
 	getResp, err := hostAuthGet(authIndex)
 	if err != nil {
 		return false, fmt.Errorf("get auth for disable toggle: %w", err)
