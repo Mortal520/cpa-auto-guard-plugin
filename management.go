@@ -93,6 +93,8 @@ func dispatchAPI(req managementRequest, action string) ([]byte, error) {
 		return recoverResponse(req)
 	case "delete":
 		return deleteResponse(req)
+	case "inject":
+		return injectResponse(req)
 	case "settings":
 		return configResponse(req)
 	default:
@@ -253,6 +255,83 @@ func toggleResponse(req managementRequest) ([]byte, error) {
 	g.applyConfig(cfg)
 	g.pushLog("info", "", "", fmt.Sprintf("插件开关已切为 %v", want))
 	return jsonResponse(map[string]any{"ok": true, "enabled": want})
+}
+
+// injectResponse feeds a synthetic usageEvent into the state machine. This is
+// useful for operators/tests to drive the quota-disable and request_failed-delete
+// flows without waiting for a real upstream failure. Requires auth_index and a
+// kind: "quota" (429 limit reached), "failed" (5xx/network/401 request failed),
+// or "ok" (success). Optional reset_at_ms (for quota) and reason are honored.
+func injectResponse(req managementRequest) ([]byte, error) {
+	if req.Method != http.MethodPost {
+		return jsonResponse(map[string]any{"ok": false, "error": "POST required"})
+	}
+	var parsed struct {
+		AuthIndex string `json:"auth_index"`
+		Kind      string `json:"kind"`
+		StatusCode int   `json:"status_code"`
+		ResetAtMS  int64 `json:"reset_at_ms"`
+		Reason     string `json:"reason"`
+	}
+	if len(req.Body) > 0 {
+		_ = json.Unmarshal(req.Body, &parsed)
+	}
+	authIndex := strings.TrimSpace(parsed.AuthIndex)
+	if authIndex == "" {
+		return jsonResponse(map[string]any{"ok": false, "error": "auth_index required"})
+	}
+	kind := strings.ToLower(strings.TrimSpace(parsed.Kind))
+	if kind == "" {
+		kind = "failed"
+	}
+	// Resolve account name from internal state if present.
+	account := ""
+	if v := guard().snapshot()[authIndex]; v != nil {
+		account = v.Account
+	}
+	ev := usageEvent{AuthIndex: authIndex, Account: account, Provider: "codex"}
+	switch kind {
+	case "quota", "429":
+		ev.Failed = true
+		ev.StatusCode = 429
+		ev.LimitReached = true
+		if parsed.StatusCode == 429 || parsed.StatusCode == 0 {
+			ev.StatusCode = 429
+		} else {
+			ev.StatusCode = parsed.StatusCode
+		}
+		ev.ResetAtMS = parsed.ResetAtMS
+		if ev.ResetAtMS == 0 {
+			// default 5-minute window so the recover path is exercisable
+			ev.ResetAtMS = time.Now().UnixMilli() + 5*60*1000
+		}
+		if parsed.Reason != "" {
+			ev.Reason = parsed.Reason
+		} else {
+			ev.Reason = "usage_limit_reached"
+		}
+	case "failed", "error":
+		ev.Failed = true
+		if parsed.StatusCode == 0 {
+			// default 401 to exercise the auth-failure path
+			ev.StatusCode = 401
+		} else {
+			ev.StatusCode = parsed.StatusCode
+		}
+		if parsed.Reason != "" {
+			ev.Reason = parsed.Reason
+		} else {
+			ev.Reason = "request failed"
+		}
+	case "ok":
+		ev.Failed = false
+		ev.StatusCode = 200
+	default:
+		return jsonResponse(map[string]any{"ok": false, "error": "kind must be quota/failed/ok"})
+	}
+	guard().recordUsage(ev)
+	guard().pushLog("info", authIndex, account, fmt.Sprintf("注入事件: kind=%s status=%d reset_at_ms=%d", kind, ev.StatusCode, ev.ResetAtMS))
+	return jsonResponse(map[string]any{"ok": true, "injected": kind, "status_code": ev.StatusCode})
 }
 
 func recoverResponse(req managementRequest) ([]byte, error) {
