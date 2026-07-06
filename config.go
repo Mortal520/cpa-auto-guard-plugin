@@ -25,6 +25,7 @@ func configDefaults() guardConfig {
 		ProbeTimeoutMS:           15000,
 		RecoverGraceSeconds:      60,
 		MaxStuckRetries:          5,
+		SweepSeconds:             300,
 	}
 }
 
@@ -42,6 +43,7 @@ func configFields() []pluginapi.ConfigField {
 		{Name: "probe_timeout_ms", Type: pluginapi.ConfigFieldTypeInteger, Description: "探测超时(ms)"},
 		{Name: "recover_grace_seconds", Type: pluginapi.ConfigFieldTypeNumber, Description: "重置时间到期前的探测预留(秒)"},
 		{Name: "max_stuck_retries", Type: pluginapi.ConfigFieldTypeInteger, Description: "恢复探测连续失败上限,超过进入 disabled_stick"},
+		{Name: "sweep_seconds", Type: pluginapi.ConfigFieldTypeNumber, Description: "主动额度巡检周期(秒)"},
 	}
 }
 
@@ -146,6 +148,9 @@ func applyConfigMap(cfg *guardConfig, m map[string]any) {
 	}
 	if v, ok := takeInt(m, "max_stuck_retries"); ok {
 		cfg.MaxStuckRetries = v
+	}
+	if v, ok := takeNumber(m, "sweep_seconds"); ok {
+		cfg.SweepSeconds = v
 	}
 }
 

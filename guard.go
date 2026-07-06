@@ -41,6 +41,7 @@ type guardConfig struct {
 	ProbeTimeoutMS          int     `json:"probe_timeout_ms"`
 	RecoverGraceSeconds     float64 `json:"recover_grace_seconds"`
 	MaxStuckRetries         int     `json:"max_stuck_retries"`
+	SweepSeconds            float64 `json:"sweep_seconds"`
 }
 
 // logEntry is one line in the in-memory log ring.
@@ -54,12 +55,16 @@ type logEntry struct {
 
 // guardState is the singleton holding accounts, logs, config and ticker.
 type guardState struct {
-	mu       sync.Mutex
-	cfg      guardConfig
-	accounts map[string]*accountState
-	logs     []logEntry
-	logSeq   int64
-	lastTick int64
+	mu          sync.Mutex
+	cfg         guardConfig
+	accounts    map[string]*accountState
+	logs        []logEntry
+	logSeq      int64
+	lastTick    int64
+	lastSweep   int64
+	ticker      *time.Ticker
+	tickerStop  chan struct{}
+	tickerOnce  sync.Once
 }
 
 const (
@@ -91,10 +96,10 @@ func guard() *guardState {
 }
 
 // applyConfig replaces the runtime config. It is safe to call from register
-// or reconfigure.
+// or reconfigure. When the plugin becomes enabled it also starts the
+// self-driving background ticker; when disabled the ticker is stopped.
 func (g *guardState) applyConfig(cfg guardConfig) {
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	if cfg.TickSeconds < 5 {
 		cfg.TickSeconds = 5
 	}
@@ -113,7 +118,78 @@ func (g *guardState) applyConfig(cfg guardConfig) {
 	if cfg.MaxStuckRetries <= 0 {
 		cfg.MaxStuckRetries = 5
 	}
+	if cfg.SweepSeconds <= 0 {
+		cfg.SweepSeconds = 300
+	}
+	wasEnabled := g.cfg.Enabled
 	g.cfg = cfg
+	g.mu.Unlock()
+	// Start or stop the background ticker after releasing the lock to avoid
+	// holding it during the channel handshake.
+	if cfg.Enabled && !wasEnabled {
+		g.startTicker()
+	} else if !cfg.Enabled && wasEnabled {
+		g.stopTicker()
+	}
+}
+
+// startTicker launches the self-driving background loop. It ticks every
+// TickSeconds to handle due cooldown recoveries, and every SweepSeconds runs a
+// full quota sweep that proactively re-queries accounts with no usage signal.
+func (g *guardState) startTicker() {
+	g.tickerOnce.Do(func() {
+		// Once started the ticker goroutine lives for the plugin lifetime; the
+		// enabled flag inside each tick gates real work.
+		g.tickerStop = make(chan struct{})
+		g.ticker = time.NewTicker(time.Duration(g.effectiveTickSeconds()) * time.Second)
+		go g.tickerLoop()
+		hostLog("info", "cpa-auto-guard: background ticker started")
+	})
+}
+
+// stopTicker stops the ticker goroutine. The goroutine exits but tickerOnce
+// keeps the singleton from restarting; enable toggles reuse the same loop.
+func (g *guardState) stopTicker() {
+	if g.tickerStop != nil {
+		select {
+		case <-g.tickerStop:
+			// already closed
+		default:
+			close(g.tickerStop)
+		}
+	}
+}
+
+func (g *guardState) effectiveTickSeconds() float64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.cfg.TickSeconds
+}
+
+func (g *guardState) tickerLoop() {
+	sweepInterval := time.Duration(g.configSnapshot().SweepSeconds) * time.Second
+	lastSweepCheck := time.Now()
+	for {
+		ok := true
+		g.mu.Lock()
+		stopCh := g.tickerStop
+		g.mu.Unlock()
+		select {
+		case <-stopCh:
+			ok = false
+		case <-g.ticker.C:
+			g.tick()
+		}
+		if !ok {
+			return
+		}
+		// Periodic full sweep: proactively probe accounts with no usage signal.
+		if time.Since(lastSweepCheck) >= sweepInterval {
+			lastSweepCheck = time.Now()
+			sweepInterval = time.Duration(g.configSnapshot().SweepSeconds) * time.Second
+			go g.probeSweep(true)
+		}
+	}
 }
 
 // configSnapshot returns a copy of the current config for status output.
@@ -207,25 +283,44 @@ func (g *guardState) recordUsage(rec usageEvent) {
 		return
 	}
 	authIndex := strings.TrimSpace(rec.AuthIndex)
-	if authIndex == "" || strings.EqualFold(rec.Provider, "codex") == false && rec.Provider != "" && !isCodexLikeProvider(rec.Provider) {
-		// Only auto-manage codex-class accounts to avoid touching other providers.
+	// Only auto-manage codex-class accounts to avoid touching other providers.
+	// An empty provider is accepted (treated as codex) so silent auth entries
+	// are still managed once seen.
+	if authIndex == "" {
 		return
 	}
-	if !isCodexLikeProvider(rec.Provider) {
+	if rec.Provider != "" && !isCodexLikeProvider(rec.Provider) {
 		return
 	}
 	g.updateAccount(authIndex, func(a *accountState) {
 		a.LastUsageMS = time.Now().UnixMilli()
+		if a.Provider == "" {
+			a.Provider = rec.Provider
+		}
+		if a.Account == "" {
+			a.Account = rec.Account
+		}
 	})
 	// Failed signals are the trigger. Success resets retry counters but does
 	// not auto-enable (enable needs an explicit probe to avoid fake recoveries).
 	if !rec.Failed {
+		g.updateAccount(authIndex, func(a *accountState) {
+			if a.State == stateRequestFailed {
+				a.RetryCount = 0
+			}
+		})
 		return
 	}
 	status := rec.StatusCode
-	if status == 429 || rec.LimitReached {
+	switch {
+	case status == 429 || rec.LimitReached:
 		g.onQuotaReached(authIndex, rec)
-	} else if status >= 500 || status == 0 || status == 401 || strings.Contains(strings.ToLower(rec.FailureBody), "request failed") {
+	case status == 401:
+		// Authentication failure: real-time handling. Treat like request_failed
+		// so a quick probe re-confirms; repeated 401s hit the delete threshold.
+		g.pushLog("warn", authIndex, rec.Account, fmt.Sprintf("401 鉴权失败, status_message=%s", truncateForLog(rec.Reason, 80)))
+		g.onRequestFailed(authIndex, rec)
+	case status >= 500 || status == 0 || strings.Contains(strings.ToLower(rec.FailureBody), "request failed"):
 		g.onRequestFailed(authIndex, rec)
 	}
 }
@@ -571,6 +666,45 @@ func (g *guardState) deleteAccount(authIndex, account string) error {
 // shutdown is invoked when the plugin is unloaded.
 func (g *guardState) shutdown() {}
 
+
+// probeSweep iterates over internal accounts and proactively queries the
+// upstream usage endpoint for each. This is the "better data source" path: it
+// does not depend on the host inspection result and surfaces quota state for
+// accounts that never produced a usage signal (e.g. idle accounts). When
+// onlyMissingUsage is true it skips accounts whose LastUsageMS is set so the
+// periodic sweep stays cheap; manual run sets it false to probe every account.
+func (g *guardState) probeSweep(onlyMissingUsage bool) {
+	cfg := g.configSnapshot()
+	if !cfg.Enabled {
+		return
+	}
+	accounts := g.snapshot()
+	if len(accounts) == 0 {
+		g.pushLog("info", "", "", "主动巡检: 暂无已知账号，等待 usage 事件积累")
+		return
+	}
+	now := time.Now().UnixMilli()
+	probed := 0
+	for _, a := range accounts {
+		if a.State == stateDeleted {
+			continue
+		}
+		if onlyMissingUsage && a.LastUsageMS > 0 {
+			continue
+		}
+		// Recover probes already in flight: skip to avoid hammering.
+		if a.LastProbeMS > 0 && now-a.LastProbeMS < 60_000 {
+			continue
+		}
+		g.recoverProbe(a, cfg)
+		probed++
+		// Pace upstream calls to avoid bursts.
+		time.Sleep(800 * time.Millisecond)
+	}
+	if probed > 0 {
+		g.pushLog("info", "", "", fmt.Sprintf("主动巡检完成: 探查 %d 个账号", probed))
+	}
+}
 // isCodexLikeProvider filters non-codex accounts from auto-management.
 func isCodexLikeProvider(provider string) bool {
 	p := strings.ToLower(strings.TrimSpace(provider))
@@ -591,6 +725,17 @@ func firstNonEmptyStr(m map[string]any, keys ...string) string {
 	return ""
 }
 
+// truncateForLog clamps a string for log lines so tokens/keys are bounded.
+func truncateForLog(s string, limit int) string {
+	if limit <= 0 {
+		limit = 80
+	}
+	s = strings.TrimSpace(s)
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "..."
+}
 func describeAccount(authIndex, account string) string {
 	if a := strings.TrimSpace(account); a != "" {
 		return a

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 // managementRequest mirrors the request the host delivers to management.handle.
 type managementRequest struct {
@@ -139,14 +139,20 @@ func stateResponse(req managementRequest) ([]byte, error) {
 
 func accountsResponse(req managementRequest) ([]byte, error) {
 	// Merge live list with internal state so the panel always reflects reality.
-	rawResult, rawErr := callHost(pluginabi.MethodHostAuthList, map[string]any{})
-	files, listErr := hostAuthList()
+	files, _ := hostAuthList()
 	internal := guard().snapshot()
-	rawResultStr := ""
-	if rawResult != nil {
-		rawResultStr = string(rawResult)
+	// host.auth.list may return empty on some hosts; fall back to internal state
+	// so usage-driven accounts still appear in the panel.
+	if len(files) == 0 {
+		for authIndex, st := range internal {
+			files = append(files, pluginapi.HostAuthFileEntry{
+				AuthIndex: authIndex,
+				Name:      st.FileName,
+				Provider:  st.Provider,
+				Email:     st.Account,
+			})
+		}
 	}
-	_ = rawErr
 	merged := make([]map[string]any, 0, len(files))
 	for _, f := range files {
 		if !isCodexLikeProvider(f.Provider) && f.Provider != "" {
@@ -175,7 +181,7 @@ func accountsResponse(req managementRequest) ([]byte, error) {
 		}
 		merged = append(merged, row)
 	}
-	return jsonResponse(map[string]any{"accounts": merged, "_dbg_files_total": len(files), "_dbg_merged_len": len(merged), "_dbg_list_err": listErr, "_dbg_raw_result": rawResultStr, "_dbg_raw_err": rawErr})
+	return jsonResponse(map[string]any{"accounts": merged, "_dbg_files_total": len(files), "_dbg_merged_len": len(merged), "accounts": merged})
 }
 
 func logsResponse(req managementRequest) ([]byte, error) {
@@ -198,8 +204,15 @@ func runResponse(req managementRequest) ([]byte, error) {
 	if !guard().configSnapshot().Enabled {
 		return jsonResponse(map[string]any{"ok": false, "error": "plugin disabled"})
 	}
-	go guard().tick()
-	return jsonResponse(map[string]any{"ok": true, "message": "tick scheduled"})
+	// Manual run: recover due cooldowns, then proactively probe every known
+	// account (including those with no usage signal) so quota state is
+	// discovered even without a prior inspection result.
+	go func() {
+		guard().tick()
+		guard().probeSweep(false)
+	}()
+	guard().pushLog("info", "", "", "手动触发: 已调度恢复检查 + 全量额度巡检")
+	return jsonResponse(map[string]any{"ok": true, "message": "tick + sweep scheduled"})
 }
 
 func toggleResponse(req managementRequest) ([]byte, error) {
