@@ -239,15 +239,23 @@ type managementResource struct {
 
 func buildManagementRegistration() managementRegistration {
 	return managementRegistration{
-		Resources: []managementResource{{
-			Path:        "/",
-			Menu:        "Auto Guard 控制台",
-			Description: "Codex 账号自动管理：限额禁用、到期恢复、连续失败删除。",
-		}},
+		Resources: []managementResource{
+			{
+				Path:        "/index.html",
+				Menu:        "Auto Guard",
+				Description: "Codex 账号自动管理：限额禁用、到期恢复、连续失败删除。",
+			},
+			{
+				Path:        "/logs.html",
+				Menu:        "Auto Guard 日志",
+				Description: "实时日志窗口与历史日志查看。",
+			},
+		},
 		Routes: []managementRoute{
 			{Method: "GET", Path: "/cpa-auto-guard/state", Description: "完整状态 JSON"},
 			{Method: "GET", Path: "/cpa-auto-guard/accounts", Description: "账号视图"},
 			{Method: "GET", Path: "/cpa-auto-guard/logs", Description: "日志 (支持 since)"},
+			{Method: "POST", Path: "/cpa-auto-guard/logs/clear", Description: "清空日志"},
 			{Method: "POST", Path: "/cpa-auto-guard/run", Description: "手动触发一轮 tick"},
 			{Method: "POST", Path: "/cpa-auto-guard/toggle", Description: "开关插件"},
 			{Method: "POST", Path: "/cpa-auto-guard/recover", Description: "强制恢复某账号"},

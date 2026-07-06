@@ -35,23 +35,19 @@ func handleManagement(raw []byte) ([]byte, error) {
 			return nil, fmt.Errorf("decode management request: %w", err)
 		}
 	}
-	path := strings.TrimRight(strings.TrimSpace(req.Path), "/")
-	if path == "" || path == "/" {
-		return okEnvelope(managementResponse{
-			StatusCode: http.StatusOK,
-			Headers:    http.Header{"content-type": []string{"text/html; charset=utf-8"}},
-			Body:       renderConsole(req),
-		})
+	// The host delivers the full request path: either /v0/management/cpa-auto-guard/<action>
+	// for authenticated API calls, or /v0/resource/plugins/cpa-auto-guard/<sub> for
+	// unauthenticated browser resource pages. We normalise both.
+	path := strings.TrimSpace(req.Path)
+	const resourcePrefix = "/v0/resource/plugins/" + pluginID + "/"
+	if strings.HasPrefix(path, resourcePrefix) {
+		return serveResource(req, strings.TrimPrefix(path, resourcePrefix))
 	}
-	// Resource page sub-paths render the same console; SPA-style routing is done client-side.
-	if strings.HasPrefix(path, "/view") || strings.HasPrefix(path, "/about") {
-		return okEnvelope(managementResponse{
-			StatusCode: http.StatusOK,
-			Headers:    http.Header{"content-type": []string{"text/html; charset=utf-8"}},
-			Body:       renderConsole(req),
-		})
+	const mgmtPrefix = "/v0/management/" + pluginID + "/"
+	if strings.HasPrefix(path, mgmtPrefix) {
+		return dispatchAPI(req, strings.TrimPrefix(path, mgmtPrefix))
 	}
-	// API routes under /v0/management/cpa-auto-guard/...
+	// Legacy fallback: some hosts may deliver the path already stripped.
 	if strings.HasPrefix(path, "/cpa-auto-guard/") {
 		return dispatchAPI(req, strings.TrimPrefix(path, "/cpa-auto-guard/"))
 	}
@@ -59,6 +55,21 @@ func handleManagement(raw []byte) ([]byte, error) {
 		StatusCode: http.StatusNotFound,
 		Headers:    http.Header{"content-type": []string{"text/plain; charset=utf-8"}},
 		Body:       []byte("not found"),
+	})
+}
+
+// serveResource renders the HTML console for any resource sub-path. The page
+// is a self-contained SPA, so /index.html, /logs.html, /view, /about all share
+// the same shell; client-side JS decides which view to render.
+func serveResource(req managementRequest, sub string) ([]byte, error) {
+	src := strings.TrimRight(strings.TrimSpace(sub), "/")
+	if src == "" {
+		src = "index.html"
+	}
+	return okEnvelope(managementResponse{
+		StatusCode: http.StatusOK,
+		Headers:    http.Header{"content-type": []string{"text/html; charset=utf-8"}},
+		Body:       renderConsole(req),
 	})
 }
 
@@ -281,7 +292,9 @@ table{width:100%;border-collapse:collapse;font-size:.78rem}th,td{padding:.4rem .
 <div class="card"><div class="row" style="justify-content:space-between"><h1><span>🛡️ cpa-auto-guard</span><span id="verBadge" class="badge">v` + pluginVer + `</span><span id="enBadge" class="badge">加载中</span></h1>
 <div class="row"><label class="toggle"><div id="switch" class="switch" onclick="togglePlugin()"></div><span id="switchLabel" class="small muted">关闭</span></label>
 <button onclick="runTick()">⚡ 立即执行</button>
-<button class="warn" onclick="clearLogs()">清空日志</button></div></div></div>
+<button class="warn" onclick="clearLogs()">清空日志</button>
+<a class="badge" href="/v0/management/" target="_blank" rel="noopener" style="text-decoration:none">CPA 面板</a>
+<a class="badge" href="./logs.html" style="text-decoration:none">日志页</a></div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">账号</h3><span class="small muted" id="accCount"></span></div><div style="overflow-x:auto"><table id="accTable"><thead><tr><th>状态</th><th>账号</th><th>file</th><th>CPA disabled</th><th>guard</th><th>重置剩余</th><th>retry</th><th>操作</th></tr></thead><tbody id="accBody"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody></table></div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">日志</h3><span class="small muted" id="logCount"></span></div><div id="log"><div class="muted">加载中…</div></div></div>
