@@ -138,8 +138,12 @@ func stateResponse(req managementRequest) ([]byte, error) {
 
 func accountsResponse(req managementRequest) ([]byte, error) {
 	// Merge live list with internal state so the panel always reflects reality.
-	files, _ := hostAuthList()
+	files, listErr := hostAuthList()
 	internal := guard().snapshot()
+	if listErr != nil {
+		hostLog("warn", "cpa-auto-guard: host.auth.list error: "+listErr.Error())
+	}
+	hostLog("warn", fmt.Sprintf("cpa-auto-guard: host.auth.list returned %d files", len(files)))
 	merged := make([]map[string]any, 0, len(files))
 	for _, f := range files {
 		if !isCodexLikeProvider(f.Provider) && f.Provider != "" {
