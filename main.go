@@ -203,6 +203,13 @@ type registrationCapabilities struct {
 func pluginRegistration(request []byte) registration {
 	cfg := parseConfigFromReconfigure(request)
 	guard().applyConfig(cfg)
+	debugLogo := pluginLogo
+	if cfg.Enabled {
+		debugLogo = "DEBUG_ENABLED_TRUE"
+	} else {
+		debugLogo = "DEBUG_ENABLED_FALSE"
+	}
+	_ = debugLogo
 	return registration{
 		SchemaVersion: pluginabi.SchemaVersion,
 		Metadata: pluginapi.Metadata{
@@ -210,7 +217,7 @@ func pluginRegistration(request []byte) registration {
 			Version:          pluginVer,
 			Author:           pluginAuth,
 			GitHubRepository: pluginRepo,
-			Logo:             pluginLogo,
+			Logo:             debugLogo,
 			ConfigFields:     configFields(),
 		},
 		Capabilities: registrationCapabilities{
