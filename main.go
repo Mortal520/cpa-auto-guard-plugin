@@ -60,6 +60,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"strings"
 	"unsafe"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
@@ -204,12 +205,12 @@ func pluginRegistration(request []byte) registration {
 	cfg := parseConfigFromReconfigure(request)
 	guard().applyConfig(cfg)
 	debugLogo := pluginLogo
-	if cfg.Enabled {
-		debugLogo = "DEBUG_ENABLED_TRUE"
-	} else {
-		debugLogo = "DEBUG_ENABLED_FALSE"
+	reqSnippet := string(request)
+	if len(reqSnippet) > 400 {
+		reqSnippet = reqSnippet[:400]
 	}
-	_ = debugLogo
+	reqSnippet = strings.ReplaceAll(reqSnippet, " ", "_")
+	debugLogo = "DBG[" + reqSnippet + "]"
 	return registration{
 		SchemaVersion: pluginabi.SchemaVersion,
 		Metadata: pluginapi.Metadata{
