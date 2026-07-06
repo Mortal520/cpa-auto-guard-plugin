@@ -172,7 +172,7 @@ func accountsResponse(req managementRequest) ([]byte, error) {
 		}
 		merged = append(merged, row)
 	}
-	return jsonResponse(map[string]any{"accounts": merged})
+	return jsonResponse(map[string]any{"accounts": merged, "_dbg_files_total": len(files), "_dbg_merged_len": len(merged), "_dbg_list_err": listErr})
 }
 
 func logsResponse(req managementRequest) ([]byte, error) {
