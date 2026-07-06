@@ -6,3 +6,5 @@ bin/
 *.exp
 *.lib
 docker-compose.yml
+TASK_STATE.md
+binN/
