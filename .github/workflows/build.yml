@@ -54,6 +54,8 @@ jobs:
         run: |
           set -euo pipefail
           go mod download 2>&1 | tee download.log
+          # Generate go.sum entries for direct deps that lack them (e.g. yaml.v3).
+          go mod tidy 2>&1 | tee -a download.log || true
 
       - name: Build c-shared
         env:
