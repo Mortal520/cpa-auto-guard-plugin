@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -42,6 +43,14 @@ type guardConfig struct {
 	RecoverGraceSeconds     float64 `json:"recover_grace_seconds"`
 	MaxStuckRetries         int     `json:"max_stuck_retries"`
 	SweepSeconds            float64 `json:"sweep_seconds"`
+	// ManagementURL is the CPA management API base (e.g. http://127.0.0.1:8317)
+	// used by the plugin to fetch auth files when host.auth.get callbacks
+	// return no credential material. Defaults to http://127.0.0.1:8317.
+	ManagementURL string `json:"management_url,omitempty"`
+	// ManagementKey is the CPA X-Management-Key value. Sensitive: never logged
+	// or echoed back by the plugin. When empty, the plugin falls back to the
+	// host.auth.* callbacks (which may be unavailable on some CPA builds).
+	ManagementKey string `json:"-"`
 }
 
 // logEntry is one line in the in-memory log ring.
@@ -395,6 +404,13 @@ func (g *guardState) onRequestFailed(authIndex string, rec usageEvent) {
 	g.pushLog("warn", authIndex, rec.Account, fmt.Sprintf("request_failed 达阈值 %d，开始重查额度", cfg.DeleteThreshold))
 	outcome, err := g.probeAccount(authIndex, rec.Account)
 	if err != nil {
+		if errors.Is(err, errHostAuthUnavailable) {
+			// Host cannot expose credentials: fall back to event-driven mode.
+			// Keep the retry count so live failure events still accumulate; do
+			// not escalate to delete on an environment limitation alone.
+			g.pushLog("warn", authIndex, rec.Account, "重查额度跳过: host 不暴露凭据, 退回事件驱动模式")
+			return
+		}
 		g.pushLog("error", authIndex, rec.Account, fmt.Sprintf("重查额度探测失败: %v", err))
 		g.updateAccount(authIndex, func(a *accountState) { a.RetryCount++ })
 		return
@@ -459,6 +475,16 @@ func (g *guardState) tick() {
 func (g *guardState) recoverProbe(a *accountState, cfg guardConfig) {
 	outcome, err := g.probeAccount(a.AuthIndex, a.Account)
 	if err != nil {
+		if errors.Is(err, errHostAuthUnavailable) {
+			// Host cannot expose credentials for probing on this CPA build.
+			// Do not blame the account: skip retry/stuck escalation and rely
+			// on live usage events to drive quota decisions instead.
+			g.pushLog("warn", a.AuthIndex, a.Account, "恢复探测跳过: host 不暴露凭据, 退回事件驱动模式")
+			g.updateAccount(a.AuthIndex, func(s *accountState) {
+				s.LastProbeMS = time.Now().UnixMilli()
+			})
+			return
+		}
 		g.pushLog("error", a.AuthIndex, a.Account, fmt.Sprintf("恢复探测失败: %v", err))
 		g.updateAccount(a.AuthIndex, func(s *accountState) {
 			s.LastProbeMS = time.Now().UnixMilli()
@@ -528,14 +554,28 @@ type probeResult struct {
 	usedPercent *float64
 }
 
+// errHostAuthUnavailable is returned by probeAccount when the host cannot
+// expose credential material for probing (e.g. host.auth.get callback returns
+// no response on some CPA builds). It is an environment limitation, not an
+// account failure, so callers must NOT count it toward stuck retries.
+var errHostAuthUnavailable = fmt.Errorf("host auth material unavailable for probe")
+
 // probeAccount re-queries the upstream quota endpoint for one auth file.
 func (g *guardState) probeAccount(authIndex, account string) (probeResult, error) {
 	cfg := g.configSnapshot()
-	get, err := hostAuthGet(authIndex)
-	if err != nil {
-		return probeResult{}, err
+	// Prefer the management API path: download the full auth JSON (incl. token)
+	// via /v0/management/auth-files/download. This works on CPA builds where
+	// host.auth.get returns no credential material.
+	token, accID, mgmtOK := mgmtResolveTokenAndAccount(cfg, authIndex)
+	if !mgmtOK {
+		// Fall back to the host callback path. When it fails, surface a
+		// sentinel error so callers degrade gracefully (no stuck/delete).
+		get, err := hostAuthGet(authIndex)
+		if err != nil {
+			return probeResult{}, fmt.Errorf("%w: %v", errHostAuthUnavailable, err)
+		}
+		token, accID = extractTokenAndAccountID(get.JSON)
 	}
-	token, accID := extractTokenAndAccountID(get.JSON)
 	headers := http.Header{}
 	headers.Set("User-Agent", "codex_cli_rs/0.76.0 (Debian 13.0.0; x86_64) WindowsTerminal")
 	if accID != "" {
@@ -679,6 +719,33 @@ func (g *guardState) probeSweep(onlyMissingUsage bool) {
 		return
 	}
 	accounts := g.snapshot()
+	// If the internal map is empty, seed it from the CPA management API so the
+	// sweep can proactively probe accounts that never produced a usage event.
+	if len(accounts) == 0 && cfg.ManagementKey != "" {
+		if seed, err := mgmtAuthList(cfg); err == nil && len(seed) > 0 {
+			for _, f := range seed {
+				if !isCodexLikeProvider(f.Provider) && f.Provider != "" {
+					continue
+				}
+				g.updateAccount(f.AuthIndex, func(a *accountState) {
+					if a.FileName == "" {
+						a.FileName = f.Name
+					}
+					if a.Provider == "" {
+						a.Provider = f.Provider
+					}
+					if a.Account == "" {
+						a.Account = f.Account
+					}
+					if a.Account == "" {
+						a.Account = f.Email
+					}
+				})
+			}
+			accounts = g.snapshot()
+			g.pushLog("info", "", "", fmt.Sprintf("主动巡检: 从 CPA 管理 API 预填 %d 个账号", len(seed)))
+		}
+	}
 	if len(accounts) == 0 {
 		g.pushLog("info", "", "", "主动巡检: 暂无已知账号，等待 usage 事件积累")
 		return

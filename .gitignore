@@ -5,3 +5,4 @@ bin/
 *.h
 *.exp
 *.lib
+docker-compose.yml

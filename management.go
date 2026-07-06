@@ -141,8 +141,28 @@ func accountsResponse(req managementRequest) ([]byte, error) {
 	// Merge live list with internal state so the panel always reflects reality.
 	files, _ := hostAuthList()
 	internal := guard().snapshot()
-	// host.auth.list may return empty on some hosts; fall back to internal state
-	// so usage-driven accounts still appear in the panel.
+	// host.auth.list may return empty on some hosts; fall back to the CPA
+	// management API (when configured) to enumerate the full auth set, then to
+	// internal state so usage-driven accounts still appear in the panel.
+	if len(files) == 0 {
+		cfg := guard().configSnapshot()
+		if cfg.ManagementKey != "" {
+			if mgmtFiles, err := mgmtAuthList(cfg); err == nil {
+				for _, mf := range mgmtFiles {
+					files = append(files, pluginapi.HostAuthFileEntry{
+						AuthIndex:     mf.AuthIndex,
+						Name:          mf.Name,
+						Provider:      mf.Provider,
+						Email:         mf.Email,
+						Account:       mf.Account,
+						Disabled:      mf.Disabled,
+						Unavailable:   mf.Unavailable,
+						StatusMessage: mf.StatusMessage,
+					})
+				}
+			}
+		}
+	}
 	if len(files) == 0 {
 		for authIndex, st := range internal {
 			files = append(files, pluginapi.HostAuthFileEntry{
@@ -255,6 +275,40 @@ func recoverResponse(req managementRequest) ([]byte, error) {
 	return jsonResponse(map[string]any{"ok": true, "message": "recover probe scheduled"})
 }
 
+func configResponse(req managementRequest) ([]byte, error) {
+	g := guard()
+	cfg := g.configSnapshot()
+	if req.Method == http.MethodPost {
+		var parsed struct {
+			ManagementURL *string `json:"management_url,omitempty"`
+			ManagementKey *string `json:"management_key,omitempty"`
+		}
+		if len(req.Body) > 0 {
+			_ = json.Unmarshal(req.Body, &parsed)
+		}
+		if parsed.ManagementURL != nil {
+			cfg.ManagementURL = strings.TrimSpace(*parsed.ManagementURL)
+		}
+		if parsed.ManagementKey != nil {
+			mk := strings.TrimSpace(*parsed.ManagementKey)
+			// An empty string preserves the existing key when the UI sends a
+			// masked placeholder; a non-empty value replaces it.
+			if mk != "" {
+				cfg.ManagementKey = mk
+			}
+		}
+		g.applyConfig(cfg)
+		g.pushLog("info", "", "", "管理 API 配置已更新")
+		return jsonResponse(map[string]any{"ok": true})
+	}
+	// GET: return current config but never expose the management key. The UI
+	// only needs to know whether one is configured.
+	resp := map[string]any{
+		"management_url":      cfg.ManagementURL,
+		"management_key_set":  cfg.ManagementKey != "",
+	}
+	return jsonResponse(resp)
+}
 func deleteResponse(req managementRequest) ([]byte, error) {
 	authIndex := strings.TrimSpace(req.Query.Get("auth_index"))
 	if authIndex == "" && len(req.Body) > 0 {
@@ -321,6 +375,11 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 <a class="badge" href="/v0/management/plugins" target="_blank" rel="noopener">插件总览</a>
 </div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
+<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">管理 API 配置</h3><span class="small muted" id="cfgStatus"></span></div><div class="row" style="margin-top:.5rem;align-items:flex-end">
+<label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">CPA 管理 API 基址<input id="cfgURL" type="text" placeholder="http://127.0.0.1:8317" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
+<label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">X-Management-Key<input id="cfgKey" type="password" placeholder="留空表示未配置" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
+<button id="btnSaveCfg">保存配置</button></div>
+<div class="small muted" style="margin-top:.5rem">配置后插件可直接通过管理 API 拿取账号凭据进行主动探查，绕过失效的 host 回调。Key 仅存内存，不回显、不写日志。</div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">账号</h3><span class="small muted" id="accCount"></span></div><div style="overflow-x:auto"><table id="accTable"><thead><tr><th>状态</th><th>账号</th><th>file</th><th>CPA disabled</th><th>guard</th><th>重置剩余</th><th>retry</th><th>操作</th></tr></thead><tbody id="accBody"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody></table></div></div>
 <div class="card log-card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">日志</h3><span class="small muted" id="logCount"></span></div><div class="log-wrap" id="log"><div class="muted" style="color:#94a3b8">加载中…</div></div></div>
 <div class="card small muted">cpa-auto-guard 在 CPA 进程内自驱动管理 Codex 账号：限额禁用、到期探测恢复、request_failed 连续失败删除。日志仅在内存中保留最近 500 条。</div>
@@ -444,13 +503,33 @@ async function del(idx) {
   setTimeout(loadState, 400);
 }
 async function clearLogs() { await api("logs/clear", {method: "POST"}); loadLogs(); }
+async function loadCfg() {
+  const r = await api("config");
+  if (!r || !r.ok) return;
+  const d = r.result || {};
+  document.getElementById("cfgURL").value = d.management_url || "";
+  const st = document.getElementById("cfgStatus");
+  if (st) st.textContent = d.management_key_set ? "Key 已配置 ✓" : "未配置 Key";
+}
+async function saveCfg() {
+  const url = document.getElementById("cfgURL").value.trim();
+  let key = document.getElementById("cfgKey").value;
+  if (!url) { alert("请填写管理 API 基址"); return; }
+  const body = {management_url: url};
+  // Only send key when user typed something (empty = keep current).
+  if (key && key.trim() !== "") body.management_key = key.trim();
+  const r = await api("config", {method: "POST", body: body});
+  if (r && r.ok) { document.getElementById("cfgKey").value = ""; loadCfg(); alert("配置已保存"); }
+  else { alert("保存失败: " + (r && r.error ? r.error.message : "")); }
+}
+document.getElementById("btnSaveCfg").addEventListener("click", saveCfg);
 document.getElementById("switch").addEventListener("click", togglePlugin);
 document.getElementById("switch").addEventListener("keydown", function (e) {
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); togglePlugin(); }
 });
 document.getElementById("btnRun").addEventListener("click", runTick);
 document.getElementById("btnClear").addEventListener("click", clearLogs);
-loadState(); loadLogs();
+loadState(); loadLogs(); loadCfg();
 setInterval(loadState, 5000);
 setInterval(loadLogs, 3000);
 </script></body></html>`
