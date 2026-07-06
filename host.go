@@ -58,12 +58,15 @@ import "C"
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/proxyutil"
 )
 
 // callHost invokes a host callback method and returns the Result field.
@@ -228,13 +231,36 @@ func setAuthDisabled(authIndex string, disabled bool) (bool, error) {
 }
 
 // probeUpstream issues a GET against the configured probe URL using the given
-// bearer token and optional account-id header.
-func probeUpstream(probeURL, token string, headers http.Header) (pluginapi.HTTPResponse, error) {
+func probeUpstream(cfg guardConfig, probeURL, token string, headers http.Header) (pluginapi.HTTPResponse, error) {
 	if headers == nil {
 		headers = http.Header{}
 	}
 	if token != "" && headers.Get("Authorization") == "" {
 		headers.Set("Authorization", "Bearer "+token)
+	}
+	// When the host.http.do callback is unreliable on some CPA c-shared builds,
+	// bypass it with a direct HTTP client using a user-configured proxy (socks5/http).
+	// mgmtOK=true but host.http.do code=1 means we need the direct path.
+	if strings.TrimSpace(cfg.ProxyURL) != "" {
+		transport, _, errBuild := proxyutil.BuildHTTPTransport(cfg.ProxyURL)
+		if errBuild == nil && transport != nil {
+			client := &http.Client{Timeout: time.Duration(cfg.ProbeTimeoutMS) * time.Millisecond, Transport: transport}
+			req, errReq := http.NewRequest(http.MethodGet, probeURL, nil)
+			if errReq != nil {
+				return pluginapi.HTTPResponse{}, errReq
+			}
+			req.Header = headers
+			resp, errDo := client.Do(req)
+			if errDo != nil {
+				return pluginapi.HTTPResponse{}, errDo
+			}
+			defer resp.Body.Close()
+			body, errRead := io.ReadAll(resp.Body)
+			if errRead != nil {
+				return pluginapi.HTTPResponse{}, errRead
+			}
+			return pluginapi.HTTPResponse{StatusCode: resp.StatusCode, Headers: resp.Header.Clone(), Body: body}, nil
+		}
 	}
 	return hostHTTPDo(http.MethodGet, probeURL, headers, nil)
 }

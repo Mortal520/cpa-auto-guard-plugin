@@ -51,6 +51,10 @@ type guardConfig struct {
 	// or echoed back by the plugin. When empty, the plugin falls back to the
 	// host.auth.* callbacks (which may be unavailable on some CPA builds).
 	ManagementKey string `json:"-"`
+	// ProxyURL is an optional socks5/http proxy used for upstream probes.
+	// Required when the CPA host.http.do callback is unavailable (c-shared plugin
+	// builds) and the probe target is reachable only through an upstream proxy.
+	ProxyURL string `json:"proxy_url,omitempty"`
 }
 
 // logEntry is one line in the in-memory log ring.
@@ -581,7 +585,7 @@ func (g *guardState) probeAccount(authIndex, account string) (probeResult, error
 	if accID != "" {
 		headers.Set("Chatgpt-Account-Id", accID)
 	}
-	resp, err := probeUpstream(cfg.ProbeURL, token, headers)
+	resp, err := probeUpstream(cfg, cfg.ProbeURL, token, headers)
 	if err != nil {
 		msg := fmt.Sprintf("cpa-auto-guard probeUpstream err=%v url=%s account=%s token_len=%d accID_len=%d mgmtOK=%v", err, cfg.ProbeURL, account, len(token), len(accID), mgmtOK)
 		hostLog("warn", msg)

@@ -26,7 +26,7 @@ func configDefaults() guardConfig {
 		MaxStuckRetries:          5,
 		SweepSeconds:             300,
 		ManagementURL:             "http://127.0.0.1:8317",
-	}
+		ProxyURL:                  "",
 }
 
 // configFields declares plugin-owned configuration fields for the management UI.
@@ -46,6 +46,7 @@ func configFields() []pluginapi.ConfigField {
 		{Name: "sweep_seconds", Type: pluginapi.ConfigFieldTypeNumber, Description: "主动额度巡检周期(秒)"},
 		{Name: "management_url", Type: pluginapi.ConfigFieldTypeString, Description: "CPA 管理 API 基址 (用于拿账号凭据)"},
 		{Name: "management_key", Type: pluginapi.ConfigFieldTypeString, Description: "CPA X-Management-Key (敏感, 不回显)"},
+		{Name: "proxy_url", Type: pluginapi.ConfigFieldTypeString, Description: "probe 出站代理(socks5/http), 留空则直连"},
 	}
 }
 
@@ -159,6 +160,9 @@ func applyConfigMap(cfg *guardConfig, m map[string]any) {
 	}
 	if v, ok := takeString(m, "management_key"); ok && v != "" {
 		cfg.ManagementKey = v
+	}
+	if v, ok := takeString(m, "proxy_url"); ok {
+		cfg.ProxyURL = v
 	}
 }
 
