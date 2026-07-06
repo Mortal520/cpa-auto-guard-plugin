@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"strconv"
+	"gopkg.in/yaml.v3"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
@@ -49,17 +50,51 @@ func parseConfigFromReconfigure(request []byte) guardConfig {
 	if len(request) == 0 {
 		return cfg
 	}
+	// Host sends {"config_yaml": <YAML bytes>, "schema_version": N}.
 	var raw map[string]any
 	if err := json.Unmarshal(request, &raw); err != nil {
 		return cfg
 	}
-	// Host sends {"config": {...}} or the config object directly.
+	// Case 1: native c-shared bridge delivers config_yaml as a YAML string.
+	if yamlBytes, ok := extractYAMLBytes(raw); ok {
+		applyYAMLConfig(&cfg, yamlBytes)
+		return cfg
+	}
+	// Case 2: host sends {"config": {...}} or the config object directly as JSON.
 	configMap := raw
 	if nested, ok := raw["config"].(map[string]any); ok {
 		configMap = nested
 	}
 	applyConfigMap(&cfg, configMap)
 	return cfg
+}
+
+// extractYAMLBytes pulls the YAML config payload from the reconfigure request.
+// The c-shared bridge encodes ConfigYAML as a base64 string or a raw string.
+func extractYAMLBytes(raw map[string]any) ([]byte, bool) {
+	v, ok := raw["config_yaml"]
+	if !ok || v == nil {
+		return nil, false
+	}
+	switch t := v.(type) {
+	case string:
+		return []byte(t), true
+	case []byte:
+		return t, true
+	}
+	return nil, false
+}
+
+// applyYAMLConfig parses a YAML config document and applies known keys to cfg.
+func applyYAMLConfig(cfg *guardConfig, yamlBytes []byte) {
+	if len(yamlBytes) == 0 {
+		return
+	}
+	var m map[string]any
+	if err := yaml.Unmarshal(yamlBytes, &m); err != nil {
+		return
+	}
+	applyConfigMap(cfg, m)
 }
 
 func applyConfigMap(cfg *guardConfig, m map[string]any) {
