@@ -248,8 +248,8 @@ func buildManagementRegistration() managementRegistration {
 			},
 		Routes: []managementRoute{
 			{Method: "GET", Path: "/cpa-auto-guard/state", Description: "完整状态 JSON"},
-			{Method: "GET", Path: "/cpa-auto-guard/config", Description: "管理 API 配置 (URL/Key)"},
-			{Method: "POST", Path: "/cpa-auto-guard/config", Description: "更新管理 API 配置"},
+			{Method: "GET", Path: "/cpa-auto-guard/settings", Description: "管理 API 配置 (URL/Key)"},
+			{Method: "POST", Path: "/cpa-auto-guard/settings", Description: "更新管理 API 配置"},
 			{Method: "GET", Path: "/cpa-auto-guard/accounts", Description: "账号视图"},
 			{Method: "GET", Path: "/cpa-auto-guard/logs", Description: "日志 (支持 since)"},
 			{Method: "POST", Path: "/cpa-auto-guard/logs/clear", Description: "清空日志"},

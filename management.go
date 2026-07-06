@@ -93,7 +93,7 @@ func dispatchAPI(req managementRequest, action string) ([]byte, error) {
 		return recoverResponse(req)
 	case "delete":
 		return deleteResponse(req)
-	case "config":
+	case "settings":
 		return configResponse(req)
 	default:
 		return okEnvelope(managementResponse{
@@ -506,7 +506,7 @@ async function del(idx) {
 }
 async function clearLogs() { await api("logs/clear", {method: "POST"}); loadLogs(); }
 async function loadCfg() {
-  const r = await api("config");
+  const r = await api("settings");
   if (!r || !r.ok) return;
   const d = r.result || {};
   document.getElementById("cfgURL").value = d.management_url || "";
@@ -520,7 +520,7 @@ async function saveCfg() {
   const body = {management_url: url};
   // Only send key when user typed something (empty = keep current).
   if (key && key.trim() !== "") body.management_key = key.trim();
-  const r = await api("config", {method: "POST", body: body});
+  const r = await api("settings", {method: "POST", body: body});
   if (r && r.ok) { document.getElementById("cfgKey").value = ""; loadCfg(); alert("配置已保存"); }
   else { alert("保存失败: " + (r && r.error ? r.error.message : "")); }
 }
