@@ -8,8 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
+	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
+)
 // managementRequest mirrors the request the host delivers to management.handle.
 type managementRequest struct {
 	Method         string      `json:"Method"`
@@ -138,12 +139,14 @@ func stateResponse(req managementRequest) ([]byte, error) {
 
 func accountsResponse(req managementRequest) ([]byte, error) {
 	// Merge live list with internal state so the panel always reflects reality.
+	rawResult, rawErr := callHost(pluginabi.MethodHostAuthList, map[string]any{})
 	files, listErr := hostAuthList()
 	internal := guard().snapshot()
-	if listErr != nil {
-		hostLog("warn", "cpa-auto-guard: host.auth.list error: "+listErr.Error())
+	rawResultStr := ""
+	if rawResult != nil {
+		rawResultStr = string(rawResult)
 	}
-	hostLog("warn", fmt.Sprintf("cpa-auto-guard: host.auth.list returned %d files", len(files)))
+	_ = rawErr
 	merged := make([]map[string]any, 0, len(files))
 	for _, f := range files {
 		if !isCodexLikeProvider(f.Provider) && f.Provider != "" {
@@ -172,7 +175,7 @@ func accountsResponse(req managementRequest) ([]byte, error) {
 		}
 		merged = append(merged, row)
 	}
-	return jsonResponse(map[string]any{"accounts": merged, "_dbg_files_total": len(files), "_dbg_merged_len": len(merged), "_dbg_list_err": listErr})
+	return jsonResponse(map[string]any{"accounts": merged, "_dbg_files_total": len(files), "_dbg_merged_len": len(merged), "_dbg_list_err": listErr, "_dbg_raw_result": rawResultStr, "_dbg_raw_err": rawErr})
 }
 
 func logsResponse(req managementRequest) ([]byte, error) {
