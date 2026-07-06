@@ -257,6 +257,7 @@ func buildManagementRegistration() managementRegistration {
 			{Method: "POST", Path: "/cpa-auto-guard/toggle", Description: "开关插件"},
 			{Method: "POST", Path: "/cpa-auto-guard/recover", Description: "强制恢复某账号"},
 			{Method: "POST", Path: "/cpa-auto-guard/delete", Description: "强制删除某账号"},
+			{Method: "POST", Path: "/cpa-auto-guard/inject", Description: "注入测试事件 (quota/failed/ok)"},
 		},
 	}
 }
