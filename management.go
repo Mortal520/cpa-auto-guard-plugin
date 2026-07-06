@@ -315,6 +315,7 @@ func configResponse(req managementRequest) ([]byte, error) {
 	resp := map[string]any{
 		"management_url":      cfg.ManagementURL,
 		"management_key_set":  cfg.ManagementKey != "",
+		"proxy_url_configured":  cfg.ProxyURL != "",
 	}
 	return jsonResponse(resp)
 }
