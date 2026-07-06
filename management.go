@@ -314,7 +314,11 @@ async function api(path, opts) {
     headers: {"content-type": "application/json"},
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
-  try { return await r.json(); } catch (e) { return {ok: false, error: "bad json"}; }
+  let j;
+  try { j = await r.json(); } catch (e) { return {ok: false, error: "bad json"}; }
+  // CPA host may return either {ok,result} envelope or the bare payload.
+  if (j && typeof j === "object" && "result" in j && "ok" in j) return j;
+  return {ok: true, result: j};
 }
 async function loadState() {
   const s = await api("state");
