@@ -488,7 +488,8 @@ async function api(path, opts) {
   opts = opts || {};
   const hdrs = {"content-type": "application/json"};
   const k = mgmtKey();
-  if (k) hdrs["X-Management-Key"] = k;
+  if (!k) { showKeyNeeded(); return {ok: false, error: "no key"}; }
+  hdrs["X-Management-Key"] = k;
   const r = await fetch(API + "/" + path, {
     method: opts.method || "GET",
     headers: hdrs,
@@ -496,7 +497,7 @@ async function api(path, opts) {
   });
   if (r.status === 401) {
     showKeyNeeded();
-    return {ok: false, error: "missing management key"};
+    return {ok: false, error: "invalid management key"};
   }
   let j;
   try { j = await r.json(); } catch (e) { return {ok: false, error: "bad json"}; }
@@ -512,8 +513,16 @@ function showKeyNeeded() {
   if (enb) { enb.textContent = "请配置 Management Key"; enb.classList.add("muted"); }
   const guide = document.getElementById("cfgGuide");
   if (guide) guide.style.display = "flex";
+  let banner = document.getElementById("keyBanner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "keyBanner";
+    banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#451a03;padding:.6rem 1rem;text-align:center;font-size:.85rem;box-shadow:0 2px 6px rgba(0,0,0,.15)";
+    banner.innerHTML = '⚠️ 未检测到 Management Key，请在下方“管理 API 配置”卡片填入并保存，保存后浏览器自动同步鉴权';
+    document.body.appendChild(banner);
+  }
   const cfg = document.getElementById("cfgKey");
-  if (cfg) { cfg.focus(); cfg.scrollIntoView({behavior:"smooth", block:"center"}); }
+  if (cfg) cfg.focus();
 }
 
 async function loadState() {
@@ -578,7 +587,7 @@ function fmtMs(ms) {
 }
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-    return ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "&#39;" })[c];
+    return ({ "&": "&", "<": "<", ">": ">", '"': "&quot;", "'": "&#39;" })[c];
   });
 }
 async function loadLogs() {
@@ -600,6 +609,7 @@ async function loadLogs() {
 }
 async function togglePlugin() {
   const s = await api("state");
+  if (!s || !s.ok) { return; }
   const d = s.result || {};
   const want = !d.enabled;
   const r = await api("toggle", {method: "POST", body: {enabled: want}});
@@ -637,7 +647,9 @@ async function saveCfg() {
   if (!url) { alert("请填写管理 API 基址"); return; }
   const body = {management_url: url};
   // Only send key when user typed something (empty = keep current).
-  if (key && key.trim() !== "") body.management_key = key.trim();
+  // Sync key to localStorage BEFORE the fetch so X-Management-Key header
+  // is present and the POST doesn't 401 on a fresh browser.
+  if (key && key.trim() !== "") { setMgmtKey(key.trim()); body.management_key = key.trim(); }
   // Only send proxy_url when the user typed something non-empty; an empty
   // field means "keep current proxy". Send literal "" only when the user
   // wants to clear it, which we signal by them typing a single space and
@@ -647,10 +659,11 @@ async function saveCfg() {
   if (proxy !== "") body.proxy_url = proxy;
   const r = await api("settings", {method: "POST", body: body});
   if (r && r.ok) {
-    if (key && key.trim() !== "") setMgmtKey(key.trim());
     document.getElementById("cfgKey").value = "";
     const guide = document.getElementById("cfgGuide");
     if (guide) guide.style.display = "none";
+    const banner = document.getElementById("keyBanner");
+    if (banner) banner.remove();
     loadState(); loadLogs(); loadCfg();
     alert("配置已保存" + (key && key.trim() ? "，浏览器鉴权已同步" : ""));
   }
