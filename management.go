@@ -522,7 +522,7 @@ function showKeyNeeded() {
     document.body.appendChild(banner);
   }
   const cfg = document.getElementById("cfgKey");
-  if (cfg) cfg.focus();
+  // no focus() - banner is enough, avoid cursor theft
 }
 
 async function loadState() {
