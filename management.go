@@ -462,6 +462,8 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 <button id="btnRun">⚡ 立即执行</button>
 <button class="warn" id="btnClear">清空日志</button>
 <a class="badge" href="/v0/management/plugins" target="_blank" rel="noopener">插件总览</a>
+<label class="small" style="display:flex;flex-direction:column;gap:.2rem"><span class="muted">Management Key（浏览器鉴权）</span><input id="authKey" type="password" placeholder="与插件 management_key 一致" style="padding:.35rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;width:220px"></label>
+<button id="btnSaveAuth" class="small">授权</button>
 </div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">管理 API 配置</h3><span class="small muted" id="cfgStatus"></span></div><div class="row" style="margin-top:.5rem;align-items:flex-end">
@@ -478,19 +480,54 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 <script>
 const API = "/v0/management/cpa-auto-guard";
 let lastLogMs = 0;
+// Browser requests to CPA management endpoints require X-Management-Key.
+// The key is read from localStorage (populated from the auth-key input in
+// the settings card). Without a key CPA returns 401 and the UI stays empty.
+function mgmtKey() { return localStorage.getItem("cpaAgKey") || ""; }
+function setMgmtKey(v) { localStorage.setItem("cpaAgKey", v || ""); }
 async function api(path, opts) {
   opts = opts || {};
+  const hdrs = {"content-type": "application/json"};
+  const k = mgmtKey();
+  if (k) hdrs["X-Management-Key"] = k;
   const r = await fetch(API + "/" + path, {
     method: opts.method || "GET",
-    headers: {"content-type": "application/json"},
+    headers: hdrs,
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
+  if (r.status === 401) {
+    showKeyNeeded();
+    return {ok: false, error: "missing management key"};
+  }
   let j;
   try { j = await r.json(); } catch (e) { return {ok: false, error: "bad json"}; }
   // CPA host may return either {ok,result} envelope or the bare payload.
   if (j && typeof j === "object" && "result" in j && "ok" in j) return j;
   return {ok: true, result: j};
 }
+// Show a banner prompting the user to enter the management key when CPA
+// returns 401. The gate input lives in the header row; saving it to
+// localStorage makes all subsequent api() calls carry X-Management-Key.
+function showKeyNeeded() {
+  const enb = document.getElementById("enBadge");
+  if (enb) { enb.textContent = "需要 Management Key"; enb.classList.add("muted"); }
+  const ak = document.getElementById("authKey");
+  if (ak) ak.focus();
+}
+async function saveAuth() {
+  const v = document.getElementById("authKey").value.trim();
+  if (!v) { alert("请填写 Management Key"); return; }
+  setMgmtKey(v);
+  // Re-bootstrap UI now that a key is available.
+  const savedKey = localStorage.getItem("cpaAgKey");
+const ak0 = document.getElementById("authKey");
+if (ak0) ak0.value = savedKey || "";
+if (!savedKey) { showKeyNeeded(); }
+else { loadState(); loadLogs(); loadCfg(); }
+  alert("已授权，刷新数据中");
+}
+document.getElementById("btnSaveAuth").addEventListener("click", saveAuth);
+
 async function loadState() {
   const s = await api("state");
   if (!s || !s.ok) return;
