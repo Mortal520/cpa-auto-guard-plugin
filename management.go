@@ -526,7 +526,8 @@ function showKeyNeeded() {
 }
 
 async function loadState() {
-  const s = await api("state");
+  let s;
+  try { s = await api("state"); } catch (e) { return; }
   if (!s || !s.ok) return;
   const d = s.result || {};
   const sw = document.getElementById("switch");
@@ -591,7 +592,8 @@ function esc(s) {
   });
 }
 async function loadLogs() {
-  const r = await api("logs?since=" + lastLogMs);
+  let r;
+  try { r = await api("logs?since=" + lastLogMs); } catch (e) { return; }
   if (!r || !r.ok) return;
   const d = r.result || {};
   const logs = d.logs || [];
@@ -613,10 +615,12 @@ async function togglePlugin() {
   const d = s.result || {};
   const want = !d.enabled;
   const r = await api("toggle", {method: "POST", body: {enabled: want}});
-  if (r && r.ok) loadState();
+  if (r && r.ok) { loadState(); }
+  else { alert("开关切换失败: " + (r && r.error ? (typeof r.error === "string" ? r.error : r.error.message || "未知错误") : "无响应")); }
 }
 async function runTick() {
-  await api("run", {method: "POST"});
+  const r = await api("run", {method: "POST"});
+  if (!r || !r.ok) { alert("执行失败: " + (r && r.error ? (typeof r.error === "string" ? r.error : r.error.message || "未知错误") : "无响应")); return; }
   setTimeout(function () { loadState(); }, 300);
 }
 async function recover(idx) {
@@ -630,7 +634,8 @@ async function del(idx) {
 }
 async function clearLogs() { await api("logs/clear", {method: "POST"}); loadLogs(); }
 async function loadCfg() {
-  const r = await api("settings");
+  let r;
+  try { r = await api("settings"); } catch (e) { return; }
   if (!r || !r.ok) return;
   const d = r.result || {};
   document.getElementById("cfgURL").value = d.management_url || "";
@@ -667,7 +672,7 @@ async function saveCfg() {
     loadState(); loadLogs(); loadCfg();
     alert("配置已保存" + (key && key.trim() ? "，浏览器鉴权已同步" : ""));
   }
-  else { alert("保存失败: " + (r && r.error ? r.error.message : "")); }
+  else { alert("保存失败: " + (r && r.error ? (typeof r.error === "string" ? r.error : r.error.message || "未知错误") : "无响应")); }
 }
 document.getElementById("btnSaveCfg").addEventListener("click", saveCfg);
 document.getElementById("switch").addEventListener("click", togglePlugin);
