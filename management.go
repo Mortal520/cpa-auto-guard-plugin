@@ -462,11 +462,9 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 <button id="btnRun">⚡ 立即执行</button>
 <button class="warn" id="btnClear">清空日志</button>
 <a class="badge" href="/v0/management/plugins" target="_blank" rel="noopener">插件总览</a>
-<label class="small" style="display:flex;flex-direction:column;gap:.2rem"><span class="muted">Management Key（浏览器鉴权）</span><input id="authKey" type="password" placeholder="与插件 management_key 一致" style="padding:.35rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;width:220px"></label>
-<button id="btnSaveAuth" class="small">授权</button>
 </div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
-<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">管理 API 配置</h3><span class="small muted" id="cfgStatus"></span></div><div class="row" style="margin-top:.5rem;align-items:flex-end">
+<div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">管理 API 配置</h3><span class="small muted" id="cfgStatus"></span></div><div id="cfgGuide" class="guide" style="display:none;flex-direction:column;gap:.4rem;margin-bottom:.6rem;padding:.6rem .8rem;background:#fef3c7;border:1px solid #fbbf24;border-radius:8px"><div style="font-weight:600;color:#92400e">未检测到 Management Key</div><div class="small" style="color:#78350f">请在下方填入与 CPA <code style="background:#fffbeb;padding:.1rem .3rem;border-radius:4px">management_key</code> 一致的密钥，点击"保存配置"后浏览器会自动同步鉴权，无需额外授权操作。</div></div><div class="row" style="margin-top:.5rem;align-items:flex-end">
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">CPA 管理 API 基址<input id="cfgURL" type="text" placeholder="http://127.0.0.1:8317" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">X-Management-Key<input id="cfgKey" type="password" placeholder="留空表示未配置" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">代理 URL（socks5/http，含凭据）<input id="cfgProxy" type="text" placeholder="socks5://user:pass@host:port" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
@@ -481,8 +479,9 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 const API = "/v0/management/cpa-auto-guard";
 let lastLogMs = 0;
 // Browser requests to CPA management endpoints require X-Management-Key.
-// The key is read from localStorage (populated from the auth-key input in
-// the settings card). Without a key CPA returns 401 and the UI stays empty.
+// The key is stored in localStorage and populated from the single cfgKey
+// input in the settings card (saveCfg syncs it automatically). Without a
+// key CPA returns 401 and the UI shows a guide banner.
 function mgmtKey() { return localStorage.getItem("cpaAgKey") || ""; }
 function setMgmtKey(v) { localStorage.setItem("cpaAgKey", v || ""); }
 async function api(path, opts) {
@@ -505,28 +504,17 @@ async function api(path, opts) {
   if (j && typeof j === "object" && "result" in j && "ok" in j) return j;
   return {ok: true, result: j};
 }
-// Show a banner prompting the user to enter the management key when CPA
-// returns 401. The gate input lives in the header row; saving it to
-// localStorage makes all subsequent api() calls carry X-Management-Key.
+// When CPA returns 401 or no key is stored, guide the user to the
+// settings card instead of blocking. The single key input (cfgKey)
+// serves both browser auth and plugin config.
 function showKeyNeeded() {
   const enb = document.getElementById("enBadge");
-  if (enb) { enb.textContent = "需要 Management Key"; enb.classList.add("muted"); }
-  const ak = document.getElementById("authKey");
-  if (ak) ak.focus();
+  if (enb) { enb.textContent = "请配置 Management Key"; enb.classList.add("muted"); }
+  const guide = document.getElementById("cfgGuide");
+  if (guide) guide.style.display = "flex";
+  const cfg = document.getElementById("cfgKey");
+  if (cfg) { cfg.focus(); cfg.scrollIntoView({behavior:"smooth", block:"center"}); }
 }
-async function saveAuth() {
-  const v = document.getElementById("authKey").value.trim();
-  if (!v) { alert("请填写 Management Key"); return; }
-  setMgmtKey(v);
-  // Re-bootstrap UI now that a key is available.
-  const savedKey = localStorage.getItem("cpaAgKey");
-const ak0 = document.getElementById("authKey");
-if (ak0) ak0.value = savedKey || "";
-if (!savedKey) { showKeyNeeded(); }
-else { loadState(); loadLogs(); loadCfg(); }
-  alert("已授权，刷新数据中");
-}
-document.getElementById("btnSaveAuth").addEventListener("click", saveAuth);
 
 async function loadState() {
   const s = await api("state");
@@ -658,7 +646,14 @@ async function saveCfg() {
   const proxy = document.getElementById("cfgProxy").value.trim();
   if (proxy !== "") body.proxy_url = proxy;
   const r = await api("settings", {method: "POST", body: body});
-  if (r && r.ok) { document.getElementById("cfgKey").value = ""; loadCfg(); alert("配置已保存"); }
+  if (r && r.ok) {
+    if (key && key.trim() !== "") setMgmtKey(key.trim());
+    document.getElementById("cfgKey").value = "";
+    const guide = document.getElementById("cfgGuide");
+    if (guide) guide.style.display = "none";
+    loadState(); loadLogs(); loadCfg();
+    alert("配置已保存" + (key && key.trim() ? "，浏览器鉴权已同步" : ""));
+  }
   else { alert("保存失败: " + (r && r.error ? r.error.message : "")); }
 }
 document.getElementById("btnSaveCfg").addEventListener("click", saveCfg);
