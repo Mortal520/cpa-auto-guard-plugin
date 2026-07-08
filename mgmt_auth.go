@@ -35,7 +35,7 @@ func mgmtAuthList(cfg guardConfig) ([]mgmtAuthEntry, error) {
 	}
 	base := strings.TrimRight(strings.TrimSpace(cfg.ManagementURL), "/")
 	if base == "" {
-		base = "http://127.0.0.1:8317"
+		return nil, fmt.Errorf("management_url not configured")
 	}
 	url := base + "/v0/management/auth-files"
 	body, err := mgmtHTTPGet(url, cfg.ManagementKey)
@@ -63,7 +63,7 @@ func mgmtAuthDownload(cfg guardConfig, name string) (json.RawMessage, error) {
 	}
 	base := strings.TrimRight(strings.TrimSpace(cfg.ManagementURL), "/")
 	if base == "" {
-		base = "http://127.0.0.1:8317"
+		return nil, fmt.Errorf("management_url not configured")
 	}
 	// Encode the name as a query parameter to avoid path-traversal pitfalls.
 	url := base + "/v0/management/auth-files/download?name=" + urlEncode(name)
@@ -198,7 +198,7 @@ func mgmtSetDisabled(cfg guardConfig, authIndex string, disabled bool) (bool, er
 	body, _ := json.Marshal(map[string]any{"name": name, "disabled": disabled})
 	base := strings.TrimRight(strings.TrimSpace(cfg.ManagementURL), "/")
 	if base == "" {
-		base = "http://127.0.0.1:8317"
+		return false, fmt.Errorf("management_url not configured")
 	}
 	target := base + "/v0/management/auth-files/status"
 	respBody, err := mgmtHTTPPatch(target, body, cfg.ManagementKey)
@@ -222,7 +222,7 @@ func mgmtDeleteAuthFile(cfg guardConfig, authIndex string) error {
 	}
 	base := strings.TrimRight(strings.TrimSpace(cfg.ManagementURL), "/")
 	if base == "" {
-		base = "http://127.0.0.1:8317"
+		return fmt.Errorf("management_url not configured")
 	}
 	target := base + "/v0/management/auth-files?name=" + urlEncode(name)
 	return mgmtHTTPDelete(target, cfg.ManagementKey)

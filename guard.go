@@ -45,9 +45,9 @@ type guardConfig struct {
 	RecoverGraceSeconds     float64 `json:"recover_grace_seconds"`
 	MaxStuckRetries         int     `json:"max_stuck_retries"`
 	SweepSeconds            float64 `json:"sweep_seconds"`
-	// ManagementURL is the CPA management API base (e.g. http://127.0.0.1:8317)
+	// ManagementURL is the CPA management API base (must be configured by user)
 	// used by the plugin to fetch auth files when host.auth.get callbacks
-	// return no credential material. Defaults to http://127.0.0.1:8317.
+	// return no credential material. Empty by default; must be configured.
 	ManagementURL string `json:"management_url,omitempty"`
 	// ManagementKey is the CPA X-Management-Key value. Sensitive: never logged
 	// or echoed back by the plugin. When empty, the plugin falls back to the
@@ -113,6 +113,19 @@ func guard() *guardState {
 // applyConfig replaces the runtime config. It is safe to call from register
 // or reconfigure. When the plugin becomes enabled it also starts the
 // self-driving background ticker; when disabled the ticker is stopped.
+// updateManagementConfig updates only the management API fields (URL, key,
+// proxy) without touching enabled/ticker state. This avoids restarting
+// the background loop when the user merely saves their API settings.
+func (g *guardState) updateManagementConfig(cfg guardConfig) {
+	g.mu.Lock()
+	g.cfg.ManagementURL = cfg.ManagementURL
+	if cfg.ManagementKey != "" {
+		g.cfg.ManagementKey = cfg.ManagementKey
+	}
+	g.cfg.ProxyURL = cfg.ProxyURL
+	g.mu.Unlock()
+}
+
 func (g *guardState) applyConfig(cfg guardConfig) {
 	g.mu.Lock()
 	if cfg.TickSeconds < 5 {
@@ -713,7 +726,7 @@ func (g *guardState) deleteAccount(cfg guardConfig, authIndex, account string) e
 	// Prefer the CPA management API delete path. The host.auth.get/save
 	// callbacks are unreliable on c-shared builds, so only fall back when
 	// management_key is not configured.
-	if cfg.ManagementKey != "" {
+	if cfg.ManagementKey != "" && cfg.ManagementURL != "" {
 		if err := mgmtDeleteAuthFile(cfg, authIndex); err != nil {
 			hostLog("warn", fmt.Sprintf("deleteAccount mgmt path failed: %v", err))
 			return err
@@ -773,7 +786,7 @@ func (g *guardState) probeSweep(onlyMissingUsage bool) {
 	accounts := g.snapshot()
 	// If the internal map is empty, seed it from the CPA management API so the
 	// sweep can proactively probe accounts that never produced a usage event.
-	if len(accounts) == 0 && cfg.ManagementKey != "" {
+	if len(accounts) == 0 && cfg.ManagementKey != "" && cfg.ManagementURL != "" {
 		if seed, err := mgmtAuthList(cfg); err == nil && len(seed) > 0 {
 			for _, f := range seed {
 				if !isCodexLikeProvider(f.Provider) && f.Provider != "" {

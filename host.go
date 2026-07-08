@@ -209,7 +209,7 @@ func hostHTTPDo(method, target string, headers http.Header, body []byte) (plugin
 // host callback path. Returns the previous disabled state so callers can
 // skip no-op writes.
 func setAuthDisabled(cfg guardConfig, authIndex string, disabled bool) (bool, error) {
-	if cfg.ManagementKey != "" {
+	if cfg.ManagementKey != "" && cfg.ManagementURL != "" {
 		prev, err := mgmtSetDisabled(cfg, authIndex, disabled)
 		if err == nil {
 			return prev, nil

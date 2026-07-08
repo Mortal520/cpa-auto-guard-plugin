@@ -385,7 +385,7 @@ func configResponse(req managementRequest) ([]byte, error) {
 			// embedded credentials and is never echoed on GET.
 			cfg.ProxyURL = pu
 		}
-		g.applyConfig(cfg)
+		g.updateManagementConfig(cfg)
 		g.pushLog("info", "", "", "管理 API 配置已更新")
 		return jsonResponse(map[string]any{"ok": true})
 	}
@@ -465,7 +465,7 @@ a.badge{cursor:pointer;color:var(--accent) !important}.stat{display:flex;flex-di
 </div></div></div>
 <div class="card"><div class="stats" id="stats"></div></div>
 <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0">管理 API 配置</h3><span class="small muted" id="cfgStatus"></span></div><div id="cfgGuide" class="guide" style="display:none;flex-direction:column;gap:.4rem;margin-bottom:.6rem;padding:.6rem .8rem;background:#fef3c7;border:1px solid #fbbf24;border-radius:8px"><div style="font-weight:600;color:#92400e">未检测到 Management Key</div><div class="small" style="color:#78350f">请在下方填入与 CPA <code style="background:#fffbeb;padding:.1rem .3rem;border-radius:4px">management_key</code> 一致的密钥，点击"保存配置"后浏览器会自动同步鉴权，无需额外授权操作。</div></div><div class="row" style="margin-top:.5rem;align-items:flex-end">
-<label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">CPA 管理 API 基址<input id="cfgURL" type="text" placeholder="http://127.0.0.1:8317" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
+<label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">CPA 管理 API 基址<input id="cfgURL" type="text" placeholder="http://CPA地址:端口" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">X-Management-Key<input id="cfgKey" type="password" placeholder="留空表示未配置" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <label class="small" style="display:flex;flex-direction:column;gap:.2rem;flex:1;min-width:200px">代理 URL（socks5/http，含凭据）<input id="cfgProxy" type="text" placeholder="socks5://user:pass@host:port" style="padding:.4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem"></label>
 <button id="btnSaveCfg">保存配置</button></div>

@@ -1,0 +1,21 @@
+fix: remove hardcoded 127.0.0.1:8317, prevent crash on save, stop 403
+
+Three critical issues fixed:
+
+1. Config loss: configResponse POST now uses updateManagementConfig()
+   which only updates management fields (URL/key/proxy) without touching
+   enabled/ticker state. Previously applyConfig() could restart the
+   ticker and trigger probeSweep -> mgmtAuthList, which sent HTTP
+   requests to the hardcoded 127.0.0.1:8317 inside the container,
+   potentially causing CPA to rate-limit or 403 the user.
+
+2. Crash on save: All hardcoded "http://127.0.0.1:8317" fallbacks
+   removed from mgmt_auth.go (5 occurrences), config.go default,
+   guard.go comments, and management.go placeholder. When ManagementURL
+   is empty, all mgmt functions now return an error instead of
+   silently connecting to localhost:8317.
+
+3. 403 rejection: setAuthDisabled and deleteAccount now check
+   ManagementURL != "" before attempting mgmt API calls, falling back
+   to host callbacks when URL is unconfigured. probeSweep skips mgmt
+   seed when ManagementURL is empty.

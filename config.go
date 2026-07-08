@@ -25,7 +25,7 @@ func configDefaults() guardConfig {
 		RecoverGraceSeconds:      60,
 		MaxStuckRetries:          5,
 		SweepSeconds:             300,
-		ManagementURL:             "http://127.0.0.1:8317",
+		ManagementURL:             "",
 		ProxyURL:                  "",
 	}
 }
